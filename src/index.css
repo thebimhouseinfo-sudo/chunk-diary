@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-vibrant-indigo: #2D336B;
+  --color-vibrant-coral: #FF6B6B;
+  --color-vibrant-mint: #4ECDC4;
+  --color-vibrant-yellow: #FFD93D;
+  --color-vibrant-bg: #F8FAFC;
+
+  --color-brand-50: #f5f8ff;
+  --color-brand-100: #ebf1ff;
+  --color-brand-200: #d6e2ff;
+  --color-brand-300: #b3cbff;
+  --color-brand-400: #85a9ff;
+  --color-brand-505: #5282ff;
+  --color-brand-600: #295aff;
+  --color-brand-700: #1a42ff;
+  --color-brand-800: #102eed;
+  --color-brand-900: #0c20c4;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-vibrant-bg);
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animations and transitions helpers */
+.page-fade-enter {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.page-fade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+}

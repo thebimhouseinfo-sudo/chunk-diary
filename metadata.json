@@ -1,0 +1,6 @@
+{
+  "name": "Language Chunk Diary",
+  "description": "Learn foreign languages from your daily life diary by breaking down entries into natural, bite-sized language chunks with interactive pronunciation practice.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
