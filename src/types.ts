@@ -1,12 +1,12 @@
 export interface Diary {
-  id: string;
+  id?: string;
   title: string;
   content: string;
   createdAt: string;
 }
 
 export interface MeaningUnit {
-  id: string;
+  id?: string;
   diaryId: string;
   nativeText: string;
   englishPivot: string;
@@ -14,14 +14,14 @@ export interface MeaningUnit {
 }
 
 export interface Chunk {
-  id: string;
+  id?: string;
   meaningUnitId: string;
   language: string;
   text: string;
   meaning: string;
   ipa: string;
   romanization: string;
-  stars: number; // 0 for unpracticed, 1-5 for practiced
+  stars: number;
   bestAccuracy: number;
   timesPracticed: number;
   lastPracticed: string;
@@ -30,7 +30,7 @@ export interface Chunk {
 }
 
 export interface PracticeHistory {
-  id: string;
+  id?: string;
   chunkId: string;
   date: string;
   accuracy: number;
@@ -39,7 +39,7 @@ export interface PracticeHistory {
 
 export interface UserSettings {
   nativeLanguage: string;
-  learningLanguages: string[]; // max 3
+  learningLanguages: string[];
   aiProvider: "gemini" | "openai" | "xai";
   apiKey: string;
   modelPriorityList: {
@@ -47,12 +47,6 @@ export interface UserSettings {
     openai: string[];
     xai: string[];
   };
-  onboardingComplete?: boolean;
-  nickname?: string;
-  learningPurposes?: string[]; // Multiple choice: "Sở thích" | "Công việc" | "Khác"
-  industryCategory?: string;
-  industry?: string;
-  hobbyCategory?: string;
   hobby?: string;
 }
 

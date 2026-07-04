@@ -66,7 +66,7 @@ Please customize/optimize the extracted language chunks, translations, and suppl
       apiKey: key,
       httpOptions: {
         headers: {
-          'User-Agent': 'aistudio-build',
+          'User-Agent': 'chunk-diary-app',
         }
       }
     });
