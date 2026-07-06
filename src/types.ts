@@ -48,6 +48,9 @@ export interface UserSettings {
     xai: string[];
   };
   hobby?: string;
+  nickname?: string;
+  onboarded?: boolean;
+  learningGoal?: string;
 }
 
 export interface GenerationStep {

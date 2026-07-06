@@ -11,7 +11,11 @@ import {
   Sparkles,
   Layers,
   History,
-  Trash2
+  Trash2,
+  X,
+  User,
+  Languages,
+  Target
 } from "lucide-react";
 import {
   saveDiary,
@@ -136,6 +140,15 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   const [currentStep, setCurrentStep] = useState(0);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Onboarding state
+  const [onboardingData, setOnboardingData] = useState({
+    nickname: "",
+    nativeLanguage: "Vietnamese",
+    learningLanguage: "English",
+    goal: ""
+  });
 
   const steps = [
     { name: "Phân tích nội dung", description: "Đang hiểu ngữ cảnh nhật ký..." },
@@ -147,7 +160,15 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   useEffect(() => {
     fetchDiaries();
     const saved = localStorage.getItem("user_settings");
-    if (saved) setSettings(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setSettings(parsed);
+      if (!parsed.onboarded) {
+        setShowOnboarding(true);
+      }
+    } else {
+      setShowOnboarding(true);
+    }
   }, []);
 
   const fetchDiaries = async () => {
@@ -180,6 +201,26 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
         setSelectedDiaryChunks([]);
       }
     }
+  };
+
+  const handleOnboardingSubmit = () => {
+    const newSettings: UserSettings = {
+      nativeLanguage: onboardingData.nativeLanguage,
+      learningLanguages: [onboardingData.learningLanguage],
+      aiProvider: "gemini",
+      apiKey: settings?.apiKey || "",
+      modelPriorityList: settings?.modelPriorityList || {
+        gemini: ["gemini-2.0-flash", "gemini-1.5-flash"],
+        openai: ["gpt-4o-mini", "gpt-4o"],
+        xai: ["grok-beta"]
+      },
+      nickname: onboardingData.nickname,
+      learningGoal: onboardingData.goal,
+      onboarded: true
+    };
+    setSettings(newSettings);
+    localStorage.setItem("user_settings", JSON.stringify(newSettings));
+    setShowOnboarding(false);
   };
 
   const handleGenerate = async () => {
@@ -251,7 +292,83 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 relative">
+      {/* Onboarding Overlay */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 space-y-6 animate-pageFadeIn">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-vibrant-indigo/10 rounded-2xl flex items-center justify-center mx-auto text-vibrant-indigo">
+                <Sparkles size={32} />
+              </div>
+              <h2 className="text-2xl font-display font-black text-slate-900">Chào mừng bạn!</h2>
+              <p className="text-sm text-slate-500 font-medium">Hãy để ChunkDiary hiểu bạn hơn một chút nhé.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <User size={12} /> Biệt danh
+                </label>
+                <input
+                  type="text"
+                  placeholder="Vd: Alex, Sarah..."
+                  value={onboardingData.nickname}
+                  onChange={(e) => setOnboardingData({...onboardingData, nickname: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <Languages size={12} /> Mẹ đẻ
+                  </label>
+                  <input
+                    type="text"
+                    value={onboardingData.nativeLanguage}
+                    onChange={(e) => setOnboardingData({...onboardingData, nativeLanguage: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <Target size={12} /> Đang học
+                  </label>
+                  <input
+                    type="text"
+                    value={onboardingData.learningLanguage}
+                    onChange={(e) => setOnboardingData({...onboardingData, learningLanguage: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Mục tiêu học Tiếng Anh?
+                </label>
+                <textarea
+                  placeholder="Vd: Đi làm, du lịch, giao tiếp..."
+                  rows={2}
+                  value={onboardingData.goal}
+                  onChange={(e) => setOnboardingData({...onboardingData, goal: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-vibrant-indigo transition-all resize-none"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleOnboardingSubmit}
+              disabled={!onboardingData.nickname || !onboardingData.goal}
+              className="w-full bg-vibrant-indigo hover:bg-vibrant-indigo/90 disabled:bg-slate-100 disabled:text-slate-400 text-white py-4 rounded-[1.5rem] font-black uppercase tracking-tight shadow-lg transition-all active:scale-95"
+            >
+              Bắt đầu ngay
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Left: Input Form & History Toggle (Mobile) */}
       <div className="lg:col-span-5 space-y-6">
         <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-5">

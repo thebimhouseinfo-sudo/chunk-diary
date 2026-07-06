@@ -10,7 +10,8 @@ import {
   ArrowDown,
   RotateCcw,
   Check,
-  Smartphone
+  Smartphone,
+  Trophy
 } from "lucide-react";
 import { UserSettings } from "../types";
 import { clearDatabase } from "../db/indexedDb";
@@ -22,14 +23,17 @@ export default function SettingsView() {
     aiProvider: "gemini",
     apiKey: "",
     modelPriorityList: {
-      gemini: ["gemini-1.5-flash", "gemini-1.5-pro"],
+      gemini: ["gemini-2.0-flash", "gemini-1.5-flash"],
       openai: ["gpt-4o-mini", "gpt-4o"],
       xai: ["grok-beta"]
     },
-    hobby: ""
+    hobby: "",
+    nickname: "",
+    learningGoal: ""
   });
 
   const [newModelName, setNewModelName] = useState("");
+  const [newLanguage, setNewLanguage] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -48,6 +52,23 @@ export default function SettingsView() {
 
   const handleProviderChange = (provider: "gemini" | "openai" | "xai") => {
     handleSaveSettings({ ...settings, aiProvider: provider });
+  };
+
+  const handleAddLanguage = () => {
+    if (newLanguage.trim() && !settings.learningLanguages.includes(newLanguage.trim())) {
+      handleSaveSettings({
+        ...settings,
+        learningLanguages: [...settings.learningLanguages, newLanguage.trim()]
+      });
+      setNewLanguage("");
+    }
+  };
+
+  const handleRemoveLanguage = (lang: string) => {
+    handleSaveSettings({
+      ...settings,
+      learningLanguages: settings.learningLanguages.filter(l => l !== lang)
+    });
   };
 
   const handleResetApp = async () => {
@@ -71,12 +92,33 @@ export default function SettingsView() {
 
           <div className="space-y-4">
             <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Biệt danh</label>
+              <input
+                type="text"
+                value={settings.nickname || ""}
+                onChange={(e) => handleSaveSettings({ ...settings, nickname: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ mẹ đẻ</label>
               <input
                 type="text"
                 value={settings.nativeLanguage}
                 onChange={(e) => handleSaveSettings({ ...settings, nativeLanguage: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mục tiêu học tập</label>
+              <textarea
+                value={settings.learningGoal || ""}
+                onChange={(e) => handleSaveSettings({ ...settings, learningGoal: e.target.value })}
+                placeholder="Ví dụ: Giao tiếp đi làm, thi IELTS..."
+                rows={2}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-vibrant-indigo transition-all resize-none"
               />
             </div>
 
@@ -93,6 +135,47 @@ export default function SettingsView() {
           </div>
         </div>
 
+        {/* Learning Languages */}
+        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+          <div className="flex items-center gap-3 text-vibrant-indigo font-display font-black text-xl">
+            <Languages size={24} className="text-vibrant-mint" />
+            <h2>Ngôn ngữ đang học</h2>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {settings.learningLanguages.map((lang) => (
+                <div key={lang} className="flex items-center gap-2 bg-vibrant-indigo/5 text-vibrant-indigo px-4 py-2 rounded-xl border border-vibrant-indigo/10">
+                  <span className="text-xs font-bold">{lang}</span>
+                  <button onClick={() => handleRemoveLanguage(lang)} className="text-vibrant-coral hover:scale-110 transition-transform">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Thêm ngôn ngữ (vd: French)..."
+                value={newLanguage}
+                onChange={(e) => setNewLanguage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddLanguage()}
+                className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs outline-none focus:border-vibrant-indigo"
+              />
+              <button
+                onClick={handleAddLanguage}
+                className="bg-vibrant-indigo text-white p-2 rounded-xl hover:bg-vibrant-indigo/90"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Col */}
+      <div className="lg:col-span-6 space-y-6">
         {/* AI Config */}
         <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
           <div className="flex items-center gap-3 text-vibrant-indigo font-display font-black text-xl">
@@ -130,10 +213,7 @@ export default function SettingsView() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Right Col */}
-      <div className="lg:col-span-6 space-y-6">
         {/* Model Priority */}
         <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-5">
           <div className="flex items-center justify-between border-b border-slate-50 pb-3">
