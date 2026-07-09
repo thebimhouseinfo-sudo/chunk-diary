@@ -1,16 +1,8 @@
 import React, { useState, useEffect } from "react";
 import {
   User,
-  Languages,
-  Shield,
-  Sparkles,
-  Plus,
-  Trash2,
-  ArrowUp,
-  ArrowDown,
   RotateCcw,
-  Check,
-  Smartphone
+  Check
 } from "lucide-react";
 import { UserSettings } from "../types";
 import { clearDatabase } from "../db/indexedDb";
@@ -29,7 +21,6 @@ export default function SettingsView() {
     hobby: ""
   });
 
-  const [newModelName, setNewModelName] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -46,10 +37,6 @@ export default function SettingsView() {
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
-  const handleProviderChange = (provider: "gemini" | "openai" | "xai") => {
-    handleSaveSettings({ ...settings, aiProvider: provider });
-  };
-
   const handleResetApp = async () => {
     if (confirm("Xóa toàn bộ dữ liệu ứng dụng? Hành động này không thể hoàn tác.")) {
       await clearDatabase();
@@ -59,9 +46,9 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 animate-pageFadeIn">
-      {/* Left Col */}
-      <div className="lg:col-span-6 space-y-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 animate-pageFadeIn max-w-4xl mx-auto">
+      {/* Main Settings Card */}
+      <div className="lg:col-span-8 space-y-6">
         {/* Profile / Lang */}
         <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
           <div className="flex items-center gap-3 text-vibrant-indigo font-display font-black text-xl">
@@ -92,83 +79,10 @@ export default function SettingsView() {
             </div>
           </div>
         </div>
-
-        {/* AI Config */}
-        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
-          <div className="flex items-center gap-3 text-vibrant-indigo font-display font-black text-xl">
-            <Shield size={24} className="text-vibrant-indigo" />
-            <h2>Cấu hình AI</h2>
-          </div>
-
-          <div className="space-y-5">
-            <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl">
-              {(["gemini", "openai", "xai"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => handleProviderChange(p)}
-                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-                    settings.aiProvider === p ? "bg-white text-vibrant-indigo shadow-sm" : "text-slate-400"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">API Key</label>
-              <input
-                type="password"
-                value={settings.apiKey}
-                onChange={(e) => handleSaveSettings({ ...settings, apiKey: e.target.value })}
-                placeholder={`Nhập ${settings.aiProvider} API Key...`}
-                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-mono outline-none focus:border-vibrant-indigo transition-all"
-              />
-              <p className="text-[9px] text-slate-400 leading-relaxed italic">
-                * Khóa này chỉ được lưu tại trình duyệt của bạn (localStorage).
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Right Col */}
-      <div className="lg:col-span-6 space-y-6">
-        {/* Model Priority */}
-        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-            <div className="flex items-center gap-3 text-vibrant-indigo font-display font-black text-xl">
-              <Sparkles size={24} className="text-vibrant-coral" />
-              <h2>Mô hình</h2>
-            </div>
-            <span className="text-[9px] font-black bg-vibrant-indigo/10 text-vibrant-indigo px-2.5 py-1 rounded-full uppercase">
-              {settings.aiProvider}
-            </span>
-          </div>
-
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-            {settings.modelPriorityList[settings.aiProvider].map((model, idx) => (
-              <div key={model} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-xs font-bold text-slate-700 font-mono">{model}</span>
-                <div className="flex items-center gap-1">
-                  <button className="p-1.5 text-slate-300 hover:text-vibrant-indigo"><ArrowUp size={14} /></button>
-                  <button className="p-1.5 text-slate-300 hover:text-vibrant-indigo"><ArrowDown size={14} /></button>
-                  <button className="p-1.5 text-slate-300 hover:text-vibrant-coral"><Trash2 size={14} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Thêm mô hình..."
-              className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs outline-none"
-            />
-            <button className="bg-vibrant-indigo text-white p-2 rounded-xl"><Plus size={18} /></button>
-          </div>
-        </div>
-
+      {/* Side / Danger Zone */}
+      <div className="lg:col-span-4 space-y-6">
         {/* Reset */}
         <div className="bg-rose-50 p-6 sm:p-8 rounded-[2rem] border border-rose-100 space-y-4">
           <h3 className="font-display font-black text-rose-900">Vùng nguy hiểm</h3>
