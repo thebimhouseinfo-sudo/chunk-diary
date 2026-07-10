@@ -24,100 +24,7 @@ import {
 } from "../db/indexedDb";
 import { Diary, MeaningUnit, Chunk, UserSettings } from "../types";
 import { speakText } from "../utils/tts";
-
-async function callAI(prompt: string, settings: UserSettings, provider: "gemini" | "openai" | "xai", modelName: string) {
-  const apiKey = settings.apiKey;
-  if (provider === "gemini") {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            meaningUnits: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  order: { type: "INTEGER" },
-                  nativeText: { type: "STRING" },
-                  englishPivot: { type: "STRING" },
-                  chunks: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        language: { type: "STRING" },
-                        text: { type: "STRING" },
-                        meaning: { type: "STRING" },
-                        ipa: { type: "STRING" },
-                        romanization: { type: "STRING" }
-                      },
-                      required: ["language", "text", "meaning", "ipa", "romanization"]
-                    }
-                  }
-                },
-                required: ["order", "nativeText", "englishPivot", "chunks"]
-              }
-            }
-          },
-          required: ["meaningUnits"]
-        }
-      }
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const errMsg = errData.error?.message || res.statusText || "Lỗi API từ phía Gemini";
-      throw new Error(`Gemini Client API Error: ${errMsg}`);
-    }
-
-    const data = await res.json();
-    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!generatedText) {
-      throw new Error("Không nhận được phản hồi hợp lệ từ Gemini API.");
-    }
-    return JSON.parse(generatedText);
-  } else {
-    const baseUrl = provider === "openai" ? "https://api.openai.com/v1" : "https://api.xai.com/v1";
-    const url = `${baseUrl}/chat/completions`;
-    const payload = {
-      model: modelName,
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" }
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const errMsg = errData.error?.message || res.statusText || `Lỗi API từ phía ${provider.toUpperCase()}`;
-      throw new Error(`${provider.toUpperCase()} Client API Error: ${errMsg}`);
-    }
-
-    const data = await res.json();
-    const generatedText = data.choices?.[0]?.message?.content;
-    if (!generatedText) {
-      throw new Error(`Không nhận được phản hồi hợp lệ từ ${provider.toUpperCase()} API.`);
-    }
-    return JSON.parse(generatedText);
-  }
-}
+import { callBackgroundAIService } from "../utils/aiService";
 
 interface MyDiaryViewProps {
   onStartPractice: (chunks: Chunk[]) => void;
@@ -134,14 +41,15 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   const [selectedDiaryChunks, setSelectedDiaryChunks] = useState<Chunk[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const steps = [
-    { name: "Phân tích nội dung", description: "Đang hiểu ngữ cảnh nhật ký..." },
-    { name: "Chuyển đổi ngôn ngữ", description: "Đang tạo các Meaning Units & English Pivot..." },
-    { name: "Trích xuất Chunks", description: "Đang tạo cụm từ, IPA và Romanization..." },
-    { name: "Lưu vào cơ sở dữ liệu", description: "Đang hoàn tất lưu trữ..." }
+    { name: "Đang kết nối", description: "Đang gửi yêu cầu của bạn tới máy chủ hàng đợi..." },
+    { name: "Đang xếp hàng", description: "Đang xếp hàng chờ đến lượt xử lý (Pending)..." },
+    { name: "Đang xử lý bằng AI", description: "Gemini đang tiến hành phân tích nội dung (Processing)..." },
+    { name: "Hoàn tất & Lưu trữ", description: "Đang đồng bộ hóa kết quả vào cơ sở dữ liệu trên thiết bị..." }
   ];
 
   useEffect(() => {
@@ -186,6 +94,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     if (!content.trim() || !settings) return;
     setIsGenerating(true);
     setCurrentStep(0);
+    setQueueMessage("Khởi tạo yêu cầu dịch thuật...");
     setErrorDetails(null);
 
     try {
@@ -200,15 +109,23 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       Ngôn ngữ học: ${settings.learningLanguages.join(", ")}.
       Trả về JSON với cấu trúc meaningUnits. English Pivot là bắt buộc.`;
 
-      setCurrentStep(1);
-      const aiResponse = await callAI(
-        prompt,
-        settings,
-        settings.aiProvider,
-        settings.modelPriorityList[settings.aiProvider][0]
-      );
+      const aiResponse = await callBackgroundAIService(prompt, (status, message) => {
+        setQueueMessage(message);
+        if (status === "Pending") {
+          if (message.includes("kết nối")) {
+            setCurrentStep(0);
+          } else {
+            setCurrentStep(1);
+          }
+        } else if (status === "Processing") {
+          setCurrentStep(2);
+        } else if (status === "Completed") {
+          setCurrentStep(3);
+        }
+      });
 
-      setCurrentStep(2);
+      setQueueMessage("Đang lưu trữ dữ liệu các chunks dịch thuật...");
+      setCurrentStep(3);
       for (const muData of aiResponse.meaningUnits) {
         const muId = await saveMeaningUnit({
           diaryId,
@@ -235,7 +152,6 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
         }
       }
 
-      setCurrentStep(3);
       await fetchDiaries();
       const allDiaries = await getDiaries();
       const newlyCreated = allDiaries.find(d => d.id === diaryId);
@@ -244,9 +160,10 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       setTitle("");
       setContent("");
     } catch (err: any) {
-      setErrorDetails(err.message || "Lỗi không xác định");
+      setErrorDetails(err.message || "Lỗi kết nối hoặc xử lý hàng đợi AI");
     } finally {
       setIsGenerating(false);
+      setQueueMessage(null);
     }
   };
 
@@ -289,7 +206,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
               className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black uppercase tracking-tight shadow-lg transition-all active:scale-95"
             >
               <Send size={18} />
-              {isGenerating ? "Đang xử lý..." : "Phân tích bằng AI"}
+              {isGenerating ? "Đang xếp hàng..." : "Phân tích bằng AI"}
             </button>
           </div>
         </div>
@@ -326,13 +243,29 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
 
       {/* Right: Results / Progress */}
       <div className="lg:col-span-7 space-y-6">
+        {errorDetails && (
+          <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-start gap-3.5 text-rose-900 animate-pageFadeIn shadow-sm">
+            <AlertTriangle className="text-vibrant-coral shrink-0 mt-0.5" size={20} />
+            <div className="space-y-1">
+              <h4 className="font-display font-black text-sm uppercase tracking-wider">Lỗi xử lý AI</h4>
+              <p className="text-xs font-medium leading-relaxed">{errorDetails}</p>
+              <button
+                onClick={() => setErrorDetails(null)}
+                className="text-[10px] font-black uppercase bg-white/60 hover:bg-white text-rose-900 px-3 py-1.5 rounded-lg border border-rose-200 transition-colors mt-2"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        )}
+
         {isGenerating && (
           <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="font-display font-black text-slate-900">AI Pipeline</h3>
+              <h3 className="font-display font-black text-slate-900">AI Queue Pipeline</h3>
               <div className="flex items-center gap-2 text-[10px] text-vibrant-indigo bg-vibrant-indigo/10 px-3 py-1 rounded-full animate-pulse">
                 <span className="w-1.5 h-1.5 bg-vibrant-indigo rounded-full" />
-                <span className="font-black">PROCESSING</span>
+                <span className="font-black">IN QUEUE</span>
               </div>
             </div>
             <div className="space-y-4">
@@ -343,9 +276,11 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                      idx === currentStep ? <div className="w-4 h-4 border-2 border-vibrant-indigo border-t-transparent rounded-full animate-spin" /> :
                      <div className="w-4 h-4 rounded-full bg-slate-100" />}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className={`text-sm font-bold ${idx === currentStep ? "text-vibrant-indigo" : "text-slate-500"}`}>{step.name}</p>
-                    <p className="text-[10px] text-slate-400">{step.description}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {idx === currentStep && queueMessage ? queueMessage : step.description}
+                    </p>
                   </div>
                 </div>
               ))}
