@@ -9,6 +9,19 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// Explicit MIME type override middleware (fixes Windows registry MIME type corruption)
+app.use((req, res, next) => {
+  const ext = path.extname(req.path);
+  if (ext === ".js" || ext === ".mjs") {
+    res.type("application/javascript");
+  } else if (ext === ".ts" || ext === ".tsx" || ext === ".jsx") {
+    res.type("application/javascript");
+  } else if (ext === ".css") {
+    res.type("text/css");
+  }
+  next();
+});
+
 const PORT = 3000;
 
 // Sequential LLM generation handler
