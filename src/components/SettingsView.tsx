@@ -17,13 +17,7 @@ export default function SettingsView() {
     nickname: "",
     nativeLanguage: "Vietnamese",
     learningLanguages: ["English"],
-    aiProvider: "gemini",
-    apiKey: "",
-    modelPriorityList: {
-      gemini: ["gemini-1.5-flash", "gemini-1.5-pro"],
-      openai: ["gpt-4o-mini", "gpt-4o"],
-      xai: ["grok-beta"]
-    },
+    appScriptUrl: "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec",
     hobby: "",
     learningPurpose: "hobby",
     specialty: "",
@@ -39,6 +33,10 @@ export default function SettingsView() {
     const saved = localStorage.getItem("user_settings");
     if (saved) {
       const parsed = JSON.parse(saved);
+      // Ensure appScriptUrl is populated if it was missing in old settings
+      if (!parsed.appScriptUrl) {
+        parsed.appScriptUrl = "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec";
+      }
       setSettings(parsed);
       if (parsed.learningLanguages && parsed.learningLanguages.length > 0) {
         setLearningLanguageText(parsed.learningLanguages.join(", "));
@@ -176,7 +174,7 @@ export default function SettingsView() {
               </div>
 
               {settings.learningPurpose === "work" ? (
-                <div className="space-y-4 p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-100 animate-pageFadeIn space-y-4">
+                <div className="space-y-4 p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-100 animate-pageFadeIn">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chuyên ngành</label>
                     <select
@@ -216,6 +214,31 @@ export default function SettingsView() {
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* AI & Google Sheets Configuration Card */}
+          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+            <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
+              <Sparkles size={20} className="text-vibrant-coral" />
+              <h3 className="font-display font-black text-lg text-slate-900">Cấu hình AI & Google Sheets</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Apps Script Web App URL</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  value={settings.appScriptUrl || ""}
+                  onChange={(e) => setSettings({ ...settings, appScriptUrl: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                />
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Nhập URL của Google Apps Script Web App đã được triển khai từ Google Sheet của bạn. Cả API key và tên mô hình AI sẽ được cấu hình và gọi trực tiếp từ endpoint trong Apps Script URL này để đảm bảo hiệu suất tốt nhất.
+                </p>
+              </div>
             </div>
           </div>
 

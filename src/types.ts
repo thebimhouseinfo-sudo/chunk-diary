@@ -41,13 +41,7 @@ export interface UserSettings {
   nickname?: string;
   nativeLanguage: string;
   learningLanguages: string[];
-  aiProvider: "gemini" | "openai" | "xai";
-  apiKey: string;
-  modelPriorityList: {
-    gemini: string[];
-    openai: string[];
-    xai: string[];
-  };
+  appScriptUrl: string;
   hobby?: string;
   learningPurpose?: "hobby" | "work";
   specialty?: string;

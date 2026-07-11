@@ -53,13 +53,14 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     learningLanguage: "English",
     learningPurpose: "hobby" as "hobby" | "work",
     specialty: "Công nghệ thông tin",
-    subSpecialty: ""
+    subSpecialty: "",
+    appScriptUrl: "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec"
   });
 
   const steps = [
     { name: "Đang kết nối", description: "Đang gửi yêu cầu của bạn tới máy chủ hàng đợi..." },
     { name: "Đang xếp hàng", description: "Đang xếp hàng chờ đến lượt xử lý (Pending)..." },
-    { name: "Đang xử lý bằng AI", description: "Gemini đang tiến hành phân tích nội dung (Processing)..." },
+    { name: "Đang xử lý bằng AI", description: "AI đang tiến hành phân tích nội dung (Processing)..." },
     { name: "Hoàn tất & Lưu trữ", description: "Đang đồng bộ hóa kết quả vào cơ sở dữ liệu trên thiết bị..." }
   ];
 
@@ -68,6 +69,10 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     const saved = localStorage.getItem("user_settings");
     if (saved) {
       const parsed = JSON.parse(saved);
+      // Ensure appScriptUrl is loaded or set
+      if (!parsed.appScriptUrl) {
+        parsed.appScriptUrl = "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec";
+      }
       setSettings(parsed);
       if (!parsed.onboarded) {
         setShowOnboarding(true);
@@ -120,8 +125,8 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
 
   const handleOnboardingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onboardForm.nickname.trim() || !onboardForm.nativeLanguage.trim() || !onboardForm.learningLanguage.trim()) {
-      alert("Vui lòng điền đầy đủ nickname, ngôn ngữ mẹ đẻ và ngôn ngữ muốn học!");
+    if (!onboardForm.nickname.trim() || !onboardForm.nativeLanguage.trim() || !onboardForm.learningLanguage.trim() || !onboardForm.appScriptUrl.trim()) {
+      alert("Vui lòng điền đầy đủ nickname, ngôn ngữ mẹ đẻ, ngôn ngữ muốn học và Apps Script URL!");
       return;
     }
 
@@ -137,13 +142,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       specialty: onboardForm.learningPurpose === "work" ? onboardForm.specialty : "",
       subSpecialty: onboardForm.learningPurpose === "work" ? onboardForm.subSpecialty.trim() : "",
       onboarded: true,
-      aiProvider: currentSettings.aiProvider || "gemini",
-      apiKey: currentSettings.apiKey || "",
-      modelPriorityList: currentSettings.modelPriorityList || {
-        gemini: ["gemini-1.5-flash", "gemini-1.5-pro"],
-        openai: ["gpt-4o-mini", "gpt-4o"],
-        xai: ["grok-beta"]
-      }
+      appScriptUrl: onboardForm.appScriptUrl.trim()
     };
 
     localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
@@ -176,7 +175,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       Ngôn ngữ học: ${settings.learningLanguages.join(", ")}.${careerContext}
       Trả về JSON với cấu trúc meaningUnits. English Pivot là bắt buộc.`;
 
-      const aiResponse = await callBackgroundAIService(prompt, (status, message) => {
+      const aiResponse = await callBackgroundAIService(prompt, settings.appScriptUrl, (status, message) => {
         setQueueMessage(message);
         if (status === "Pending") {
           if (message.includes("kết nối")) {
@@ -284,6 +283,18 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Apps Script Web App URL</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  value={onboardForm.appScriptUrl}
+                  onChange={(e) => setOnboardForm({ ...onboardForm, appScriptUrl: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                />
               </div>
 
               <div className="space-y-1.5">
