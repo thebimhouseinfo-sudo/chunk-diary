@@ -298,6 +298,15 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    
+    // Custom middleware to handle .tsx and .ts files with correct MIME types
+    app.use((req, res, next) => {
+      if (req.path.endsWith('.tsx') || req.path.endsWith('.ts')) {
+        res.setHeader('Content-Type', 'application/javascript');
+      }
+      next();
+    });
+    
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
