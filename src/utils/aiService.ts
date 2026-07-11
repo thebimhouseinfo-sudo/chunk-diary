@@ -54,17 +54,19 @@ export interface AIServiceResponse {
  */
 export function callBackgroundAIService(
   prompt: string,
+  appScriptUrl: string,
   onStatusUpdate?: (status: "Pending" | "Processing" | "Completed" | "Failed", message: string) => void
 ): Promise<AIServiceResponse> {
   return new Promise(async (resolve, reject) => {
     const fingerprint = getBrowserFingerprint();
+    const finalUrl = appScriptUrl?.trim() || ENDPOINT_URL;
 
     try {
       if (onStatusUpdate) {
         onStatusUpdate("Pending", "Đang kết nối tới hệ thống xếp hàng...");
       }
 
-      const reqRes = await fetch(ENDPOINT_URL, {
+      const reqRes = await fetch(finalUrl, {
         method: "POST",
         mode: "cors",
         redirect: "follow",
@@ -102,7 +104,7 @@ export function callBackgroundAIService(
 
       const poll = async () => {
         try {
-          const checkRes = await fetch(ENDPOINT_URL, {
+          const checkRes = await fetch(finalUrl, {
             method: "POST",
             mode: "cors",
             redirect: "follow",
