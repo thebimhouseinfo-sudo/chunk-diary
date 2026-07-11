@@ -17,7 +17,6 @@ export default function SettingsView() {
     nickname: "",
     nativeLanguage: "Vietnamese",
     learningLanguages: ["English"],
-    appScriptUrl: "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec",
     hobby: "",
     learningPurpose: "hobby",
     specialty: "",
@@ -33,10 +32,6 @@ export default function SettingsView() {
     const saved = localStorage.getItem("user_settings");
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Ensure appScriptUrl is populated if it was missing in old settings
-      if (!parsed.appScriptUrl) {
-        parsed.appScriptUrl = "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec";
-      }
       setSettings(parsed);
       if (parsed.learningLanguages && parsed.learningLanguages.length > 0) {
         setLearningLanguageText(parsed.learningLanguages.join(", "));
@@ -68,8 +63,8 @@ export default function SettingsView() {
   const handlePlaceholderClick = (action: string) => {
     setPlaceholderMessage(
       action === "download"
-        ? "Tính năng Tải xuống dữ liệu (Backup) đang được phát triển và sẽ sớm ra mắt."
-        : "Tính năng Phục hồi dữ liệu (Restore) yêu cầu tài khoản Premium để đồng bộ đám mây đám mây."
+        ? "Tính năng Tải xuống dữ liệu (Backup) yêu cầu tài khoản Premium để đồng bộ đám mây."
+        : "Tính năng Phục hồi dữ liệu (Restore) yêu cầu tài khoản Premium để đồng bộ đám mây."
     );
     setTimeout(() => setPlaceholderMessage(null), 4000);
   };
@@ -113,26 +108,67 @@ export default function SettingsView() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ mẹ đẻ</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={settings.nativeLanguage}
                     onChange={(e) => setSettings({ ...settings, nativeLanguage: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                  />
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                  >
+                    <option value="Vietnamese">Tiếng Việt</option>
+                    <option value="English">Tiếng Anh</option>
+                    <option value="Japanese">Tiếng Nhật</option>
+                    <option value="Korean">Tiếng Hàn</option>
+                    <option value="Chinese">Tiếng Trung</option>
+                    <option value="French">Tiếng Pháp</option>
+                    <option value="German">Tiếng Đức</option>
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ muốn học</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ví dụ: English, Japanese"
+                  <select
                     value={learningLanguageText}
                     onChange={(e) => setLearningLanguageText(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                  />
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                  >
+                    <option value="English">Tiếng Anh (English)</option>
+                    <option value="Japanese">Tiếng Nhật (Japanese)</option>
+                    <option value="Korean">Tiếng Hàn (Korean)</option>
+                    <option value="Chinese">Tiếng Trung (Chinese)</option>
+                    <option value="French">Tiếng Pháp (French)</option>
+                    <option value="German">Tiếng Đức (German)</option>
+                    <option value="Spanish">Tiếng Tây Ban Nha (Spanish)</option>
+                    <option value="Italian">Tiếng Ý (Italian)</option>
+                  </select>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* CEFR Level Card */}
+          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+            <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
+              <Sparkles size={20} className="text-vibrant-coral" />
+              <h3 className="font-display font-black text-lg text-slate-900">Trình độ ngôn ngữ</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trình độ CEFR</label>
+                <select
+                  value={settings.cefrLevel || "A2"}
+                  onChange={(e) => setSettings({ ...settings, cefrLevel: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                >
+                  <option value="A1">A1 – Mới bắt đầu</option>
+                  <option value="A2">A2 – Sơ cấp</option>
+                  <option value="B1">B1 – Trung cấp</option>
+                  <option value="B2">B2 – Trung cấp nâng cao</option>
+                  <option value="C1">C1 – Cao cấp</option>
+                  <option value="C2">C2 – Thành thạo</option>
+                </select>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Hệ thống sẽ tạo các câu (chunks) phù hợp với trình độ CEFR của bạn. Chunks sẽ bao gồm Common (câu phổ thông) và Personalized (câu cá nhân hóa theo nghề nghiệp/sở thích).
+                </p>
               </div>
             </div>
           </div>
@@ -187,6 +223,15 @@ export default function SettingsView() {
                       <option value="Kinh tế / Tài chính">Kinh tế / Tài chính</option>
                       <option value="Kỹ thuật / Sản xuất">Kỹ thuật / Sản xuất</option>
                       <option value="Ngôn ngữ / Sư phạm">Ngôn ngữ / Sư phạm</option>
+                      <option value="Marketing / Truyền thông">Marketing / Truyền thông</option>
+                      <option value="Thiết kế / Nghệ thuật">Thiết kế / Nghệ thuật</option>
+                      <option value="Xây dựng / Bất động sản">Xây dựng / Bất động sản</option>
+                      <option value="Du lịch / Khách sạn">Du lịch / Khách sạn</option>
+                      <option value="Nhà hàng / F&B">Nhà hàng / F&B</option>
+                      <option value="Logistics / Chuỗi cung ứng">Logistics / Chuỗi cung ứng</option>
+                      <option value="Luật / Pháp lý">Luật / Pháp lý</option>
+                      <option value="Nhân sự / Hành chính">Nhân sự / Hành chính</option>
+                      <option value="Bán lẻ / Thương mại điện tử">Bán lẻ / Thương mại điện tử</option>
                       <option value="Khác">Khác</option>
                     </select>
                   </div>
@@ -217,31 +262,6 @@ export default function SettingsView() {
             </div>
           </div>
 
-          {/* AI & Google Sheets Configuration Card */}
-          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
-            <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
-              <Sparkles size={20} className="text-vibrant-coral" />
-              <h3 className="font-display font-black text-lg text-slate-900">Cấu hình AI & Google Sheets</h3>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Apps Script Web App URL</label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  value={settings.appScriptUrl || ""}
-                  onChange={(e) => setSettings({ ...settings, appScriptUrl: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                />
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Nhập URL của Google Apps Script Web App đã được triển khai từ Google Sheet của bạn. Cả API key và tên mô hình AI sẽ được cấu hình và gọi trực tiếp từ endpoint trong Apps Script URL này để đảm bảo hiệu suất tốt nhất.
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Action Row */}
           <div className="flex justify-end">
             <button
@@ -269,9 +289,10 @@ export default function SettingsView() {
               <button
                 type="button"
                 onClick={() => handlePlaceholderClick("download")}
-                className="w-full flex items-center justify-center gap-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-2xl text-xs font-bold transition-all cursor-pointer border-none"
+                className="w-full flex items-center justify-center gap-2.5 bg-vibrant-indigo/5 hover:bg-vibrant-indigo/10 text-vibrant-indigo py-3.5 rounded-2xl text-xs font-black transition-all cursor-pointer border-none relative overflow-hidden"
               >
                 <Download size={15} /> Tải xuống dữ liệu
+                <span className="absolute top-1 right-2 bg-vibrant-coral text-white font-mono font-black text-[7px] px-1.5 py-0.5 rounded-md uppercase tracking-wider">PREMIUM</span>
               </button>
 
               <button

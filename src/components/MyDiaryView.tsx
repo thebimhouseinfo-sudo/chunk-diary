@@ -20,11 +20,14 @@ import {
   getChunksByMeaningUnitId,
   saveMeaningUnit,
   saveChunk,
-  deleteDiary
+  deleteDiary,
+  getSemanticGroups,
+  saveSemanticGroup,
+  getChunksBySemanticGroupId
 } from "../db/indexedDb";
 import { Diary, MeaningUnit, Chunk, UserSettings } from "../types";
 import { speakText } from "../utils/tts";
-import { callBackgroundAIService } from "../utils/aiService";
+import { callGenerateChunks } from "../utils/aiService";
 
 interface MyDiaryViewProps {
   onStartPractice: (chunks: Chunk[]) => void;
@@ -43,6 +46,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   const [currentStep, setCurrentStep] = useState(0);
   const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [semanticGroupCounts, setSemanticGroupCounts] = useState<Record<string, number>>({});
   const [showHistory, setShowHistory] = useState(false);
 
   // Onboarding Modal States
@@ -54,13 +58,12 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     learningPurpose: "hobby" as "hobby" | "work",
     specialty: "Công nghệ thông tin",
     subSpecialty: "",
-    appScriptUrl: "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec"
+    cefrLevel: "A2"
   });
 
   const steps = [
-    { name: "Đang kết nối", description: "Đang gửi yêu cầu của bạn tới máy chủ hàng đợi..." },
-    { name: "Đang xếp hàng", description: "Đang xếp hàng chờ đến lượt xử lý (Pending)..." },
-    { name: "Đang xử lý bằng AI", description: "AI đang tiến hành phân tích nội dung (Processing)..." },
+    { name: "Gửi yêu cầu", description: "Đang gửi yêu cầu của bạn tới máy chủ..." },
+    { name: "Đang xử lý bằng AI", description: "AI đang tiến hành phân tích nội dung..." },
     { name: "Hoàn tất & Lưu trữ", description: "Đang đồng bộ hóa kết quả vào cơ sở dữ liệu trên thiết bị..." }
   ];
 
@@ -69,10 +72,6 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     const saved = localStorage.getItem("user_settings");
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Ensure appScriptUrl is loaded or set
-      if (!parsed.appScriptUrl) {
-        parsed.appScriptUrl = "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec";
-      }
       setSettings(parsed);
       if (!parsed.onboarded) {
         setShowOnboarding(true);
@@ -94,13 +93,22 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   const handleSelectDiary = async (diary: Diary) => {
     setSelectedDiary(diary);
     const mus = await getMeaningUnitsForDiary(diary.id!);
+    mus.sort((a, b) => a.order - b.order);
     setSelectedDiaryMUs(mus);
-    
+
     const allChunks: Chunk[] = [];
+    const counts: Record<string, number> = {};
     for (const mu of mus) {
       const chunks = await getChunksByMeaningUnitId(mu.id!);
       allChunks.push(...chunks);
+      for (const chunk of chunks) {
+        if (chunk.semanticGroupId && counts[chunk.semanticGroupId] === undefined) {
+          const groupChunks = await getChunksBySemanticGroupId(chunk.semanticGroupId);
+          counts[chunk.semanticGroupId] = groupChunks.length;
+        }
+      }
     }
+    setSemanticGroupCounts(counts);
     setSelectedDiaryChunks(allChunks);
     setShowHistory(false);
   };
@@ -125,8 +133,8 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
 
   const handleOnboardingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onboardForm.nickname.trim() || !onboardForm.nativeLanguage.trim() || !onboardForm.learningLanguage.trim() || !onboardForm.appScriptUrl.trim()) {
-      alert("Vui lòng điền đầy đủ nickname, ngôn ngữ mẹ đẻ, ngôn ngữ muốn học và Apps Script URL!");
+    if (!onboardForm.nickname.trim() || !onboardForm.nativeLanguage.trim() || !onboardForm.learningLanguage.trim()) {
+      alert("Vui lòng điền đầy đủ nickname, ngôn ngữ mẹ đẻ và ngôn ngữ muốn học!");
       return;
     }
 
@@ -141,8 +149,8 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       learningPurpose: onboardForm.learningPurpose,
       specialty: onboardForm.learningPurpose === "work" ? onboardForm.specialty : "",
       subSpecialty: onboardForm.learningPurpose === "work" ? onboardForm.subSpecialty.trim() : "",
-      onboarded: true,
-      appScriptUrl: onboardForm.appScriptUrl.trim()
+      cefrLevel: onboardForm.cefrLevel,
+      onboarded: true
     };
 
     localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
@@ -164,54 +172,79 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
         createdAt: new Date().toISOString()
       });
 
-      // Include professional alignment context if learning purpose is work
-      let careerContext = "";
+      const targetLanguage = settings.learningLanguages[0] || "English";
+      const cefrLevel = settings.cefrLevel || "A2";
+
+      let profileContext = "";
       if (settings.learningPurpose === "work" && settings.specialty) {
-        careerContext = `\nBối cảnh nghề nghiệp của người học: Chuyên ngành ${settings.specialty}${settings.subSpecialty ? ` (chuyên sâu: ${settings.subSpecialty})` : ""}. Hãy tối ưu hóa việc phân tích và giải nghĩa các language chunks sát với chuyên môn này để giúp người học áp dụng hiệu quả nhất vào công việc.`;
+        profileContext = `Profession: ${settings.specialty}${settings.subSpecialty ? ` (${settings.subSpecialty})` : ""}`;
+      } else if (settings.hobby) {
+        profileContext = `Hobby/Interest: ${settings.hobby}`;
+      } else {
+        profileContext = "General learner";
       }
 
-      const prompt = `Hãy xử lý nhật ký sau: "${content}".
-      Ngôn ngữ gốc: ${settings.nativeLanguage}.
-      Ngôn ngữ học: ${settings.learningLanguages.join(", ")}.${careerContext}
-      Trả về JSON với cấu trúc meaningUnits. English Pivot là bắt buộc.`;
+      const existingGroups = await getSemanticGroups();
 
-      const aiResponse = await callBackgroundAIService(prompt, settings.appScriptUrl, (status, message) => {
+      const aiResponse = await callGenerateChunks({
+        diaryContent: content,
+        nativeLanguage: settings.nativeLanguage,
+        targetLanguage,
+        cefrLevel,
+        profileContext,
+        existingSemanticGroups: existingGroups
+      }, (status, message) => {
         setQueueMessage(message);
-        if (status === "Pending") {
-          if (message.includes("kết nối")) {
-            setCurrentStep(0);
-          } else {
-            setCurrentStep(1);
-          }
-        } else if (status === "Processing") {
-          setCurrentStep(2);
+        if (status === "Processing") {
+          setCurrentStep(1);
         } else if (status === "Completed") {
-          setCurrentStep(3);
+          setCurrentStep(2);
         }
       });
 
-      setQueueMessage("Đang lưu trữ dữ liệu các chunks dịch thuật...");
-      setCurrentStep(3);
-      for (const muData of aiResponse.meaningUnits) {
+      setQueueMessage("Đang lưu trữ dữ liệu các chunks...");
+      setCurrentStep(2);
+      for (const unit of aiResponse.semanticUnits) {
         const muId = await saveMeaningUnit({
           diaryId,
-          nativeText: muData.nativeText,
-          englishPivot: muData.englishPivot,
-          order: muData.order
+          nativeText: unit.nativeText,
+          englishPivot: unit.englishText,
+          order: unit.order
         });
 
-        for (const chunkData of muData.chunks) {
+        const allChunksData = [
+          ...(unit.commonChunks || []).map(c => ({ ...c, type: "common" as const })),
+          ...(unit.personalizedChunks || []).map(c => ({ ...c, type: "personalized" as const }))
+        ];
+
+        for (const chunk of allChunksData) {
+          let groupId = chunk.semanticGroupId;
+          if (groupId === "new" || !groupId || !existingGroups.find(g => g.id === groupId)) {
+            groupId = await saveSemanticGroup({
+              canonicalMeaning: chunk.proposedCanonicalMeaning || chunk.english,
+              coverageLevel: 1,
+              createdAt: new Date().toISOString()
+            });
+            existingGroups.push({ id: groupId, canonicalMeaning: chunk.proposedCanonicalMeaning || chunk.english, coverageLevel: 1, createdAt: new Date().toISOString() });
+          }
+
           await saveChunk({
             meaningUnitId: muId,
-            language: chunkData.language,
-            text: chunkData.text,
-            meaning: chunkData.meaning,
-            ipa: chunkData.ipa,
-            romanization: chunkData.romanization,
+            semanticGroupId: groupId,
+            language: targetLanguage,
+            text: chunk.text,
+            meaning: unit.nativeText,
+            ipa: "",
+            romanization: chunk.romanization || "",
+            chunkType: chunk.type,
             stars: 0,
             bestAccuracy: 0,
             timesPracticed: 0,
             lastPracticed: "",
+            totalReviews: 0,
+            averageRating: 0,
+            lastRating: 0,
+            lastReviewed: "",
             sourceDiaryId: diaryId,
             sourceDiaryTitle: title || `Nhật ký ngày ${new Date().toLocaleDateString("vi-VN")}`
           });
@@ -222,11 +255,11 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
       const allDiaries = await getDiaries();
       const newlyCreated = allDiaries.find(d => d.id === diaryId);
       if (newlyCreated) handleSelectDiary(newlyCreated);
-      
+
       setTitle("");
       setContent("");
     } catch (err: any) {
-      setErrorDetails(err.message || "Lỗi kết nối hoặc xử lý hàng đợi AI");
+      setErrorDetails(err.message || "Lỗi kết nối");
     } finally {
       setIsGenerating(false);
       setQueueMessage(null);
@@ -263,38 +296,53 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ mẹ đẻ</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ví dụ: Vietnamese"
+                  <select
                     value={onboardForm.nativeLanguage}
                     onChange={(e) => setOnboardForm({ ...onboardForm, nativeLanguage: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                  />
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                  >
+                    <option value="Vietnamese">Tiếng Việt</option>
+                    <option value="English">Tiếng Anh</option>
+                    <option value="Japanese">Tiếng Nhật</option>
+                    <option value="Korean">Tiếng Hàn</option>
+                    <option value="Chinese">Tiếng Trung</option>
+                    <option value="French">Tiếng Pháp</option>
+                    <option value="German">Tiếng Đức</option>
+                  </select>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ muốn học</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ví dụ: English"
+                  <select
                     value={onboardForm.learningLanguage}
                     onChange={(e) => setOnboardForm({ ...onboardForm, learningLanguage: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                  />
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                  >
+                    <option value="English">Tiếng Anh (English)</option>
+                    <option value="Japanese">Tiếng Nhật (Japanese)</option>
+                    <option value="Korean">Tiếng Hàn (Korean)</option>
+                    <option value="Chinese">Tiếng Trung (Chinese)</option>
+                    <option value="French">Tiếng Pháp (French)</option>
+                    <option value="German">Tiếng Đức (German)</option>
+                    <option value="Spanish">Tiếng Tây Ban Nha (Spanish)</option>
+                    <option value="Italian">Tiếng Ý (Italian)</option>
+                  </select>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Apps Script Web App URL</label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  value={onboardForm.appScriptUrl}
-                  onChange={(e) => setOnboardForm({ ...onboardForm, appScriptUrl: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
-                />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trình độ CEFR</label>
+                <select
+                  value={onboardForm.cefrLevel}
+                  onChange={(e) => setOnboardForm({ ...onboardForm, cefrLevel: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                >
+                  <option value="A1">A1 – Mới bắt đầu</option>
+                  <option value="A2">A2 – Sơ cấp</option>
+                  <option value="B1">B1 – Trung cấp</option>
+                  <option value="B2">B2 – Trung cấp nâng cao</option>
+                  <option value="C1">C1 – Cao cấp</option>
+                  <option value="C2">C2 – Thành thạo</option>
+                </select>
               </div>
 
               <div className="space-y-1.5">
@@ -303,22 +351,20 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                   <button
                     type="button"
                     onClick={() => setOnboardForm({ ...onboardForm, learningPurpose: "hobby" })}
-                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${
-                      onboardForm.learningPurpose === "hobby"
-                        ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
-                        : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
-                    }`}
+                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${onboardForm.learningPurpose === "hobby"
+                      ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
+                      : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
+                      }`}
                   >
                     Sở thích
                   </button>
                   <button
                     type="button"
                     onClick={() => setOnboardForm({ ...onboardForm, learningPurpose: "work" })}
-                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${
-                      onboardForm.learningPurpose === "work"
-                        ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
-                        : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
-                    }`}
+                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${onboardForm.learningPurpose === "work"
+                      ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
+                      : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
+                      }`}
                   >
                     Công việc
                   </button>
@@ -339,6 +385,15 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                       <option value="Kinh tế / Tài chính">Kinh tế / Tài chính</option>
                       <option value="Kỹ thuật / Sản xuất">Kỹ thuật / Sản xuất</option>
                       <option value="Ngôn ngữ / Sư phạm">Ngôn ngữ / Sư phạm</option>
+                      <option value="Marketing / Truyền thông">Marketing / Truyền thông</option>
+                      <option value="Thiết kế / Nghệ thuật">Thiết kế / Nghệ thuật</option>
+                      <option value="Xây dựng / Bất động sản">Xây dựng / Bất động sản</option>
+                      <option value="Du lịch / Khách sạn">Du lịch / Khách sạn</option>
+                      <option value="Nhà hàng / F&B">Nhà hàng / F&B</option>
+                      <option value="Logistics / Chuỗi cung ứng">Logistics / Chuỗi cung ứng</option>
+                      <option value="Luật / Pháp lý">Luật / Pháp lý</option>
+                      <option value="Nhân sự / Hành chính">Nhân sự / Hành chính</option>
+                      <option value="Bán lẻ / Thương mại điện tử">Bán lẻ / Thương mại điện tử</option>
                       <option value="Khác">Khác</option>
                     </select>
                   </div>
@@ -357,7 +412,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
               )}
 
               <div className="p-3 bg-vibrant-mint/10 border border-vibrant-mint/20 rounded-2xl text-[11px] text-vibrant-indigo font-medium leading-relaxed">
-                👉 <strong>Giải thích:</strong> Dữ liệu dùng để tối ưu chunks sát với chuyên môn của bạn, giúp bạn học hiệu quả hơn.
+                👉 <strong>Giải thích:</strong> AI sẽ tạo Common Chunks (cụm câu phổ thông) và Personalized Chunks (câu cá nhân hóa theo nghề/sở thích) để tối ưu việc học của bạn.
               </div>
 
               <button
@@ -409,7 +464,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                 <Sparkles size={14} className="text-vibrant-coral" /> Gợi ý viết nhật ký:
               </p>
               <ul className="list-disc pl-4 space-y-1.5">
-                <li>Viết ngắn gọn 1-3 câu đơn giản.</li>
+                <li>Hãy kể lại ngày hôm nay của bạn bằng những câu đơn giản.</li>
                 <li>Nên viết về chủ đề hàng ngày hoặc công việc của bạn.</li>
                 <li>Hệ thống sẽ tự động tách câu thành các <strong>language chunks</strong> để luyện tập.</li>
               </ul>
@@ -463,7 +518,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
             <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-start gap-3.5 text-rose-900 animate-pageFadeIn shadow-sm">
               <AlertTriangle className="text-vibrant-coral shrink-0 mt-0.5" size={20} />
               <div className="space-y-1">
-                <h4 className="font-display font-black text-sm uppercase tracking-wider">Lỗi xử lý AI</h4>
+                <h4 className="font-display font-black text-sm uppercase tracking-wider">Lỗi xử lý</h4>
                 <p className="text-xs font-medium leading-relaxed">{errorDetails}</p>
                 <button
                   onClick={() => setErrorDetails(null)}
@@ -478,7 +533,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
           {isGenerating && (
             <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <h3 className="font-display font-black text-slate-900">AI Queue Pipeline</h3>
+                <h3 className="font-display font-black text-slate-900">Queue Pipeline</h3>
                 <div className="flex items-center gap-2 text-[10px] text-vibrant-indigo bg-vibrant-indigo/10 px-3 py-1 rounded-full animate-pulse">
                   <span className="w-1.5 h-1.5 bg-vibrant-indigo rounded-full" />
                   <span className="font-black">IN QUEUE</span>
@@ -489,8 +544,8 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                   <div key={idx} className="flex items-start gap-3">
                     <div className="pt-1">
                       {idx < currentStep ? <CheckCircle size={18} className="text-vibrant-mint" /> :
-                       idx === currentStep ? <div className="w-4 h-4 border-2 border-vibrant-indigo border-t-transparent rounded-full animate-spin" /> :
-                       <div className="w-4 h-4 rounded-full bg-slate-100" />}
+                        idx === currentStep ? <div className="w-4 h-4 border-2 border-vibrant-indigo border-t-transparent rounded-full animate-spin" /> :
+                          <div className="w-4 h-4 rounded-full bg-slate-100" />}
                     </div>
                     <div className="flex-1">
                       <p className={`text-sm font-bold ${idx === currentStep ? "text-vibrant-indigo" : "text-slate-500"}`}>{step.name}</p>
@@ -529,32 +584,60 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
               <div className="space-y-4">
                 {selectedDiaryMUs.map((mu, idx) => {
                   const chunks = selectedDiaryChunks.filter(c => c.meaningUnitId === mu.id);
+                  const commonChunks = chunks.filter(c => (c as any).chunkType !== "personalized");
+                  const personalizedChunks = chunks.filter(c => (c as any).chunkType === "personalized");
                   return (
                     <div key={mu.id} className="bg-white border border-slate-100 rounded-[1.5rem] p-5 sm:p-6 space-y-4 shadow-sm">
                       <div className="flex items-start gap-3 border-b border-slate-50 pb-3">
                         <span className="w-6 h-6 rounded-lg bg-vibrant-indigo text-white flex items-center justify-center font-mono text-[10px] font-black shrink-0">{idx + 1}</span>
-                        <div>
+                        <div className="flex-1">
                           <p className="text-sm font-bold text-slate-800">{mu.nativeText}</p>
-                          <p className="text-[10px] text-vibrant-coral font-bold italic pt-1">Pivot: "{mu.englishPivot}"</p>
+                          <p className="text-[10px] text-slate-400 font-medium italic pt-1">EN: "{mu.englishPivot}"</p>
+                          {chunks.length > 0 && chunks[0].semanticGroupId && semanticGroupCounts[chunks[0].semanticGroupId] >= 3 && (
+                            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2 text-amber-800">
+                              <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-600" />
+                              <p className="text-[10px] font-medium leading-relaxed">
+                                <strong>Lưu ý:</strong> Bạn đã có nhiều chunks với ý nghĩa tương tự trong Chunk Library ({semanticGroupCounts[chunks[0].semanticGroupId]} câu).
+                                Khuyến nghị xoá bớt để tối ưu hệ thống ôn tập.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        {chunks.map(chunk => (
-                          <div key={chunk.id} className="bg-slate-50/50 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-3">
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[9px] font-black text-vibrant-indigo bg-vibrant-indigo/10 px-1.5 py-0.5 rounded">{chunk.language}</span>
-                                <span className="text-sm font-black text-slate-900">{chunk.text}</span>
+
+                      {/* Common Chunks */}
+                      {commonChunks.length > 0 && (
+                        <div className="space-y-2">
+                          <span className="text-[9px] font-black text-vibrant-mint bg-vibrant-mint/15 px-2 py-0.5 rounded-full uppercase tracking-wider">Common</span>
+                          {commonChunks.map(chunk => (
+                            <div key={chunk.id} className="bg-slate-50/50 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-3">
+                              <div className="flex-1 space-y-1">
+                                <p className="text-sm font-black text-slate-900">{chunk.text}</p>
+                                {chunk.romanization && <p className="text-[10px] text-vibrant-coral font-bold font-mono">{chunk.romanization}</p>}
+                                <p className="text-[10px] text-slate-400 font-medium italic">EN: {chunk.meaning}</p>
                               </div>
-                              <div className="text-[10px] text-slate-500 font-medium flex flex-wrap gap-x-3">
-                                <span>Nghĩa: <strong className="text-slate-700">{chunk.meaning}</strong></span>
-                                {chunk.ipa && <span>IPA: <strong className="text-vibrant-indigo font-mono">{chunk.ipa}</strong></span>}
-                              </div>
+                              <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer shrink-0">🔊</button>
                             </div>
-                            <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer">🔊</button>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Personalized Chunks */}
+                      {personalizedChunks.length > 0 && (
+                        <div className="space-y-2">
+                          <span className="text-[9px] font-black text-vibrant-coral bg-vibrant-coral/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Personalized</span>
+                          {personalizedChunks.map(chunk => (
+                            <div key={chunk.id} className="bg-vibrant-coral/5 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-3 border border-vibrant-coral/10">
+                              <div className="flex-1 space-y-1">
+                                <p className="text-sm font-black text-slate-900">{chunk.text}</p>
+                                {chunk.romanization && <p className="text-[10px] text-vibrant-coral font-bold font-mono">{chunk.romanization}</p>}
+                                <p className="text-[10px] text-slate-400 font-medium italic">EN: {chunk.meaning}</p>
+                              </div>
+                              <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer shrink-0">🔊</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

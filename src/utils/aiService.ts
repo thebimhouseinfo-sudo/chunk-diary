@@ -1,8 +1,9 @@
 /**
- * Background AI Service helper for processing diary entries via Google App Script endpoint queue.
+ * Clean AI Service helper for processing diary entries via Google App Script endpoint.
  */
 
-// Generate a unique, consistent browser fingerprint
+import { SemanticGroup } from "../types";
+
 export function getBrowserFingerprint(): string {
   const parts = [
     navigator.userAgent,
@@ -31,155 +32,81 @@ export function getBrowserFingerprint(): string {
   return `FP-${Math.abs(hash)}-${localId}`;
 }
 
-const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbxLmRVOSZXYzipNowTNuRPesNoErVlTZiRdaJVZ-I6zfergemuax1UIYDUaeB0pa2O7/exec";
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwylOXj5B1krEEQuKZle-TM2F2adJjbC_ZM1ZinSI0OaN1F6-E99oi_Gt-raTuG51kY/exec";
 
 export interface AIServiceResponse {
-  meaningUnits: Array<{
+  englishNarrative: string;
+  semanticUnits: Array<{
     order: number;
     nativeText: string;
-    englishPivot: string;
-    chunks: Array<{
-      language: string;
+    englishText: string;
+    commonChunks: Array<{
+      english: string;
       text: string;
-      meaning: string;
-      ipa: string;
       romanization: string;
+      semanticGroupId: string;
+      proposedCanonicalMeaning?: string;
+    }>;
+    personalizedChunks: Array<{
+      english: string;
+      text: string;
+      romanization: string;
+      semanticGroupId: string;
+      proposedCanonicalMeaning?: string;
     }>;
   }>;
 }
 
+export interface GenerateChunksInput {
+  diaryContent: string;
+  nativeLanguage: string;
+  targetLanguage: string;
+  cefrLevel: string;
+  profileContext: string;
+  existingSemanticGroups: SemanticGroup[];
+}
+
 /**
- * Sends a prompt to the Google App Script queue and polls until the completed result is ready.
- * Returns a Promise that resolves to the final structured response.
+ * Sends diary and user profile details to the Apps Script backend and returns processed chunks.
  */
-export function callBackgroundAIService(
-  prompt: string,
-  appScriptUrl: string,
+export async function callGenerateChunks(
+  input: GenerateChunksInput,
   onStatusUpdate?: (status: "Pending" | "Processing" | "Completed" | "Failed", message: string) => void
 ): Promise<AIServiceResponse> {
-  return new Promise(async (resolve, reject) => {
-    const fingerprint = getBrowserFingerprint();
-    const finalUrl = appScriptUrl?.trim() || ENDPOINT_URL;
+  if (onStatusUpdate) {
+    onStatusUpdate("Processing", "Đang phân tích và tạo chunks...");
+  }
 
-    try {
-      if (onStatusUpdate) {
-        onStatusUpdate("Pending", "Đang kết nối tới hệ thống xếp hàng...");
-      }
-
-      const reqRes = await fetch(finalUrl, {
-        method: "POST",
-        mode: "cors",
-        redirect: "follow",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify({
-          fingerprint,
-          prompt,
-          action: "request"
-        })
-      });
-
-      if (!reqRes.ok) {
-        throw new Error(`Lỗi kết nối máy chủ hàng đợi: ${reqRes.statusText}`);
-      }
-
-      const reqData = await reqRes.json();
-      if (!reqData.success) {
-        throw new Error(reqData.error || "Gửi yêu cầu vào hàng đợi không thành công.");
-      }
-
-      const queueId = reqData.queueId;
-      const initialStatus = reqData.status as "Pending" | "Processing" | "Completed" | "Failed" || "Pending";
-      const initialMsg = reqData.message || "Đã xếp vào hàng đợi ngầm thành công.";
-
-      if (onStatusUpdate) {
-        onStatusUpdate(initialStatus, `${initialMsg} (Mã vé: ${queueId})`);
-      }
-
-      // 2. Start Polling until "Completed" or "Failed"
-      const pollIntervalMs = 5000; // Poll every 5 seconds
-      const maxRetries = 120; // 120 * 5s = 10 minutes max timeout
-      let retries = 0;
-
-      const poll = async () => {
-        try {
-          const checkRes = await fetch(finalUrl, {
-            method: "POST",
-            mode: "cors",
-            redirect: "follow",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify({
-              fingerprint,
-              action: "check",
-              queueId
-            })
-          });
-
-          if (!checkRes.ok) {
-            console.warn(`Polling request failed with status: ${checkRes.status}. Retrying...`);
-            retries++;
-            if (retries >= maxRetries) {
-              reject(new Error("Quá thời gian chờ xử lý từ hàng đợi (Timeout)."));
-            } else {
-              setTimeout(poll, pollIntervalMs);
-            }
-            return;
-          }
-
-          const checkData = await checkRes.json();
-          if (!checkData.success) {
-            throw new Error(checkData.error || "Không thể kiểm tra trạng thái hàng đợi.");
-          }
-
-          const status = checkData.status as "Pending" | "Processing" | "Completed" | "Failed";
-          const result = checkData.result; // Final text or error description
-
-          if (status === "Completed") {
-            if (onStatusUpdate) {
-              onStatusUpdate("Completed", "Đã nhận kết quả hoàn tất!");
-            }
-            try {
-              const parsedResult = cleanAndParseJSON(result);
-              resolve(parsedResult);
-            } catch (parseErr) {
-              reject(new Error(`Không thể phân tích dữ liệu trả về từ AI: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`));
-            }
-          } else if (status === "Failed") {
-            reject(new Error(`Yêu cầu xử lý thất bại: ${result || "Lỗi không rõ từ AI Worker"}`));
-          } else {
-            // Still Pending or Processing
-            retries++;
-            if (retries >= maxRetries) {
-              reject(new Error("Quá thời gian chờ xử lý từ hàng đợi (Timeout 10 phút)."));
-              return;
-            }
-
-            const statusLabel = status === "Processing" ? "Đang xử lý bằng AI" : "Đang chờ hàng đợi";
-            if (onStatusUpdate) {
-              onStatusUpdate(status, `Trạng thái: ${statusLabel}... (Vòng lặp ${retries})`);
-            }
-            setTimeout(poll, pollIntervalMs);
-          }
-        } catch (err) {
-          retries++;
-          if (retries >= maxRetries) {
-            reject(err instanceof Error ? err : new Error(String(err)));
-          } else {
-            setTimeout(poll, pollIntervalMs);
-          }
-        }
-      };
-
-      // Start initial poll after 5 seconds
-      setTimeout(poll, pollIntervalMs);
-
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
-    }
+  const response = await fetch(ENDPOINT_URL, {
+    method: "POST",
+    mode: "cors",
+    redirect: "follow",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify({
+      action: "generateChunks",
+      fingerprint: getBrowserFingerprint(),
+      ...input
+    })
   });
+
+  if (!response.ok) {
+    if (onStatusUpdate) onStatusUpdate("Failed", "Kết nối máy chủ thất bại.");
+    throw new Error(`Lỗi kết nối máy chủ: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  if (!data.success) {
+    if (onStatusUpdate) onStatusUpdate("Failed", data.error || "Lỗi xử lý dữ liệu.");
+    throw new Error(data.error || "Gửi yêu cầu không thành công.");
+  }
+
+  if (onStatusUpdate) {
+    onStatusUpdate("Completed", "Đã nhận kết quả phân tích thành công!");
+  }
+
+  return cleanAndParseJSON(data.result);
 }
 
 function cleanAndParseJSON(rawText: string): AIServiceResponse {

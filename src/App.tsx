@@ -15,10 +15,12 @@ import MyDiaryView from "./components/MyDiaryView";
 import MyChunksView from "./components/MyChunksView";
 import PracticeGameView from "./components/PracticeGameView";
 import SettingsView from "./components/SettingsView";
+import { MicPermissionModal } from "./components/MicPermissionModal";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("home");
   const [practiceQueue, setPracticeQueue] = useState<Chunk[]>([]);
+  const [micErrorType, setMicErrorType] = useState<'denied' | 'not_found' | 'other' | null>(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
   useEffect(() => {
@@ -36,13 +38,27 @@ export default function App() {
     initializeApp();
   }, []);
 
-  const handleStartPractice = (chunksToPractice: Chunk[]) => {
-    if (chunksToPractice.length === 0) {
+  const handleStartPractice = async (chunks: Chunk[]) => {
+    if (chunks.length === 0) {
       alert("Hàng đợi rỗng! Hãy chọn những chunks cụ thể để bắt đầu luyện nói.");
       return;
     }
-    setPracticeQueue(chunksToPractice);
-    setActiveTab("practice");
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      
+      setPracticeQueue(chunks);
+      setActiveTab("practice");
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicErrorType('denied');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setMicErrorType('not_found');
+      } else {
+        setMicErrorType('other');
+      }
+    }
   };
 
   const handleFinishPractice = () => {
@@ -198,6 +214,13 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {micErrorType && (
+        <MicPermissionModal 
+          errorType={micErrorType} 
+          onClose={() => setMicErrorType(null)} 
+        />
+      )}
     </div>
   );
 }

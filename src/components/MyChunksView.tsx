@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { BookOpen, Play, Star, Trash2, AlertCircle, Volume2 } from "lucide-react";
-import { getChunks, deleteChunk } from "../db/indexedDb";
-import { Chunk } from "../types";
+import { BookOpen, Play, Star, Trash2, AlertCircle, Volume2, ChevronDown, ChevronRight, CheckSquare, Square } from "lucide-react";
+import { getChunks, deleteChunk, getSemanticGroups } from "../db/indexedDb";
+import { Chunk, SemanticGroup } from "../types";
 import { speakText } from "../utils/tts";
 
 interface MyChunksViewProps {
@@ -10,54 +10,124 @@ interface MyChunksViewProps {
 
 export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
   const [allChunks, setAllChunks] = useState<Chunk[]>([]);
-  const [filteredChunks, setFilteredChunks] = useState<Chunk[]>([]);
+  const [semanticGroups, setSemanticGroups] = useState<SemanticGroup[]>([]);
+  const [filteredGroups, setFilteredGroups] = useState<{ group: SemanticGroup | null, chunks: Chunk[] }[]>([]);
+  
   const [selectedLanguage, setSelectedLanguage] = useState("all");
   const [selectedStarFilter, setSelectedStarFilter] = useState("all");
+  
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    loadChunks();
+    loadData();
   }, []);
 
   useEffect(() => {
     applyFilters();
-  }, [allChunks, selectedLanguage, selectedStarFilter]);
+  }, [allChunks, semanticGroups, selectedLanguage, selectedStarFilter]);
 
-  const loadChunks = async () => {
+  const loadData = async () => {
     const list = await getChunks();
+    const groups = await getSemanticGroups();
     setAllChunks(list);
+    setSemanticGroups(groups);
   };
 
   const applyFilters = () => {
-    let result = [...allChunks];
+    let resultChunks = [...allChunks];
     if (selectedLanguage !== "all") {
-      result = result.filter((c) => c.language.toLowerCase() === selectedLanguage.toLowerCase());
+      resultChunks = resultChunks.filter((c) => c.language.toLowerCase() === selectedLanguage.toLowerCase());
     }
     if (selectedStarFilter !== "all") {
       const starVal = parseInt(selectedStarFilter, 10);
-      result = result.filter((c) => c.stars === starVal);
+      resultChunks = resultChunks.filter((c) => Math.round(c.averageRating || c.stars || 0) === starVal);
     }
-    setFilteredChunks(result);
+    
+    // Group chunks by semanticGroupId
+    const grouped: Record<string, Chunk[]> = {};
+    const unassigned: Chunk[] = [];
+    
+    resultChunks.forEach(chunk => {
+      if (chunk.semanticGroupId) {
+        if (!grouped[chunk.semanticGroupId]) grouped[chunk.semanticGroupId] = [];
+        grouped[chunk.semanticGroupId].push(chunk);
+      } else {
+        unassigned.push(chunk);
+      }
+    });
+
+    const displayGroups: { group: SemanticGroup | null, chunks: Chunk[] }[] = [];
+    Object.keys(grouped).forEach(groupId => {
+      const group = semanticGroups.find(g => g.id === groupId) || null;
+      displayGroups.push({ group, chunks: grouped[groupId] });
+    });
+    
+    if (unassigned.length > 0) {
+      displayGroups.push({ group: null, chunks: unassigned });
+    }
+
+    setFilteredGroups(displayGroups);
   };
 
   const handleDeleteChunk = async (id: string) => {
     if (confirm("Bạn có chắc chắn muốn xóa chunk này khỏi thư viện?")) {
       await deleteChunk(id);
-      loadChunks();
+      loadData();
+      
+      const newSelected = new Set(selectedChunkIds);
+      newSelected.delete(id);
+      setSelectedChunkIds(newSelected);
+    }
+  };
+
+  const toggleGroupSelection = (chunks: Chunk[]) => {
+    const newSelected = new Set(selectedChunkIds);
+    const allSelected = chunks.every(c => newSelected.has(c.id!));
+    chunks.forEach(c => {
+      if (allSelected) {
+        newSelected.delete(c.id!);
+      } else {
+        newSelected.add(c.id!);
+      }
+    });
+    setSelectedChunkIds(newSelected);
+  };
+
+  const toggleChunkSelection = (id: string) => {
+    const newSelected = new Set(selectedChunkIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedChunkIds(newSelected);
+  };
+
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  const startCustomPractice = () => {
+    const chunksToPractice = allChunks.filter(c => selectedChunkIds.has(c.id!));
+    if (chunksToPractice.length > 0) {
+      onStartPractice(chunksToPractice);
     }
   };
 
   const uniqueLanguages = Array.from(new Set(allChunks.map((c) => c.language)));
-
-  // Statistics calculation
   const totalChunks = allChunks.length;
-  const totalPronunciations = allChunks.reduce((sum, chunk) => sum + (chunk.timesPracticed || 0), 0);
+  const totalReviews = allChunks.reduce((sum, chunk) => sum + (chunk.totalReviews || chunk.timesPracticed || 0), 0);
+  
+  const getStarCount = (val: number) => allChunks.filter((c) => Math.round(c.averageRating || c.stars || 0) === val).length;
+  
   const starCounts = {
-    0: allChunks.filter((c) => (c.stars || 0) === 0).length,
-    1: allChunks.filter((c) => c.stars === 1).length,
-    2: allChunks.filter((c) => c.stars === 2).length,
-    3: allChunks.filter((c) => c.stars === 3).length,
-    4: allChunks.filter((c) => c.stars === 4).length,
-    5: allChunks.filter((c) => c.stars === 5).length,
+    0: getStarCount(0),
+    1: getStarCount(1),
+    2: getStarCount(2),
+    3: getStarCount(3),
+    4: getStarCount(4),
+    5: getStarCount(5),
   };
 
   return (
@@ -70,24 +140,23 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
             Thư Viện Chunks
           </h2>
           <p className="text-[10px] sm:text-xs text-slate-500 font-medium">
-            Lưu giữ và rèn luyện các cụm từ hàng ngày.
+            Quản lý và tạo danh sách phát (Play List) để luyện tập.
           </p>
         </div>
 
-        {filteredChunks.length > 0 && (
+        {selectedChunkIds.size > 0 && (
           <button
-            onClick={() => onStartPractice(filteredChunks)}
+            onClick={startCustomPractice}
             className="flex items-center gap-2 bg-vibrant-coral hover:bg-vibrant-coral/90 text-white px-5 sm:px-6 py-3 rounded-2xl font-black shadow-lg shadow-vibrant-coral/20 transition-all active:scale-95 w-full sm:w-auto justify-center text-xs uppercase tracking-tight cursor-pointer border-none"
           >
             <Play size={16} fill="currentColor" />
-            Luyện Tập ({filteredChunks.length})
+            Luyện Tập ({selectedChunkIds.size})
           </button>
         )}
       </div>
 
       {/* Dashboard Statistics Widget */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 text-left">
-        {/* Card 1: Total Chunks */}
         <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng số Chunks</span>
@@ -101,7 +170,6 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
           </div>
         </div>
 
-        {/* Card 2: Total Pronunciations */}
         <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đã phát âm</span>
@@ -110,12 +178,11 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
             </div>
           </div>
           <div>
-            <h3 className="font-display text-3xl sm:text-4xl font-black text-vibrant-coral">{totalPronunciations} LẦN</h3>
+            <h3 className="font-display text-3xl sm:text-4xl font-black text-vibrant-coral">{totalReviews} LẦN</h3>
             <p className="text-[10px] sm:text-xs text-slate-500 font-medium mt-1">Tổng lượt ghi âm phát âm thành công</p>
           </div>
         </div>
 
-        {/* Card 3: Stars distribution breakdown */}
         <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-3.5">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pb-1 border-b border-slate-100">Phân loại số sao</span>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
@@ -167,67 +234,126 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
         </select>
       </div>
 
-      {/* Chunks List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {filteredChunks.map((chunk) => (
-          <div
-            key={chunk.id}
-            className="bg-white rounded-[2rem] border border-slate-100 hover:border-vibrant-indigo/30 hover:shadow-md shadow-sm p-6 flex flex-col justify-between transition-all group"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="bg-vibrant-indigo/10 text-vibrant-indigo font-black text-[10px] uppercase px-2 py-0.5 rounded-lg">
-                  {chunk.language}
-                </span>
-                <div className="flex items-center gap-0.5">
-                  {Array.from({ length: 5 }).map((_, idx) => {
-                    const isFilled = idx < chunk.stars;
+      {/* Semantic Groups List */}
+      <div className="space-y-6">
+        {filteredGroups.map((gObj, idx) => {
+          const groupId = gObj.group?.id || "unassigned";
+          const groupName = gObj.group?.canonicalMeaning || "Unassigned / Other Chunks";
+          const isExpanded = expandedGroups[groupId] ?? true;
+          const allSelectedInGroup = gObj.chunks.every(c => selectedChunkIds.has(c.id!));
+          
+          return (
+            <div key={groupId} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+              {/* Group Header */}
+              <div 
+                className="bg-slate-50/50 p-4 sm:p-5 flex items-center justify-between cursor-pointer border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                onClick={() => toggleGroupExpanded(groupId)}
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="p-1 cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); toggleGroupSelection(gObj.chunks); }}
+                  >
+                    {allSelectedInGroup ? (
+                      <CheckSquare size={20} className="text-vibrant-indigo" />
+                    ) : (
+                      <Square size={20} className="text-slate-300" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">{groupName}</h3>
+                    <p className="text-[10px] text-slate-500">{gObj.chunks.length} chunks</p>
+                  </div>
+                </div>
+                <div className="text-slate-400">
+                  {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                </div>
+              </div>
+              
+              {/* Group Content (Chunks) */}
+              {isExpanded && (
+                <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {gObj.chunks.map(chunk => {
+                    const isSelected = selectedChunkIds.has(chunk.id!);
+                    const rating = Math.round(chunk.averageRating || chunk.stars || 0);
                     return (
-                      <Star
-                        key={idx}
-                        size={12}
-                        className={isFilled ? "text-vibrant-yellow" : "text-slate-100"}
-                        fill={isFilled ? "currentColor" : "none"}
-                      />
+                      <div
+                        key={chunk.id}
+                        className={`rounded-2xl border ${isSelected ? "border-vibrant-indigo shadow-md bg-vibrant-indigo/5" : "border-slate-100 shadow-sm bg-white"} p-5 flex flex-col justify-between transition-all cursor-pointer`}
+                        onClick={() => toggleChunkSelection(chunk.id!)}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              {isSelected ? (
+                                <CheckSquare size={16} className="text-vibrant-indigo" />
+                              ) : (
+                                <Square size={16} className="text-slate-200" />
+                              )}
+                              <span className="bg-vibrant-indigo/10 text-vibrant-indigo font-black text-[9px] uppercase px-2 py-0.5 rounded-lg">
+                                {chunk.language}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star
+                                  key={i}
+                                  size={10}
+                                  className={i < rating ? "text-vibrant-yellow" : "text-slate-100"}
+                                  fill={i < rating ? "currentColor" : "none"}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="font-display font-black text-slate-900 text-[15px] leading-tight">
+                              {chunk.text}
+                            </h4>
+                            <p className="text-[10px] text-slate-500 font-medium italic">
+                              {chunk.meaning}
+                            </p>
+                          </div>
+                          {(chunk.ipa || chunk.romanization) && (
+                            <div className="space-y-0.5 bg-white/50 p-2 rounded-xl border border-slate-100 text-[9px] font-mono">
+                              {chunk.ipa && <div className="text-slate-500">IPA: <span className="text-vibrant-indigo font-bold">{chunk.ipa}</span></div>}
+                              {chunk.romanization && <div className="text-vibrant-coral font-bold">Roman: <span className="font-medium">{chunk.romanization}</span></div>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="pt-3 mt-3 border-t border-slate-100/50 flex items-center justify-between">
+                          <div className="text-[9px] text-slate-400 font-mono font-medium">
+                            {(chunk.totalReviews || chunk.timesPracticed || 0) > 0 ? (
+                              <div>{chunk.totalReviews || chunk.timesPracticed} reviews</div>
+                            ) : (
+                              <div className="italic text-slate-300">Chưa luyện tập</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDeleteChunk(chunk.id!); }} 
+                              className="p-1.5 text-slate-300 hover:text-vibrant-coral bg-transparent border-none cursor-pointer"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); speakText(chunk.text, chunk.language); }} 
+                              className="p-1.5 bg-slate-50 rounded-lg hover:bg-slate-100 border-none cursor-pointer"
+                            >
+                              🔊
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-display font-black text-slate-900 text-lg group-hover:text-vibrant-indigo transition-colors leading-tight">
-                  {chunk.text}
-                </h3>
-                <p className="text-[10px] sm:text-xs text-slate-500 font-medium italic">
-                  Ý nghĩa: <span className="font-bold text-slate-700">{chunk.meaning}</span>
-                </p>
-              </div>
-              <div className="space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[10px] sm:text-[11px] font-mono">
-                {chunk.ipa && (
-                  <div className="text-slate-500">IPA: <span className="text-vibrant-indigo font-bold">{chunk.ipa}</span></div>
-                )}
-                {chunk.romanization && (
-                  <div className="text-vibrant-coral font-bold">Roman: <span className="font-medium">{chunk.romanization}</span></div>
-                )}
-              </div>
+              )}
             </div>
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
-              <div className="text-[9px] sm:text-[10px] text-slate-400 font-mono font-medium">
-                {chunk.timesPracticed > 0 ? (
-                  <div>Best: <strong className="text-vibrant-mint">{chunk.bestAccuracy}%</strong> | {chunk.timesPracticed} lần</div>
-                ) : (
-                  <div className="italic text-slate-300">Chưa luyện tập</div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleDeleteChunk(chunk.id)} className="p-2 text-slate-300 hover:text-vibrant-coral transition-all cursor-pointer border-none bg-transparent"><Trash2 size={14} /></button>
-                <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-slate-50 rounded-xl transition-all cursor-pointer border-none">🔊</button>
-                <button onClick={() => onStartPractice([chunk])} className="p-2.5 bg-vibrant-indigo/10 text-vibrant-indigo rounded-xl transition-all cursor-pointer border-none"><Play size={14} fill="currentColor" /></button>
-              </div>
-            </div>
-          </div>
-        ))}
-        {filteredChunks.length === 0 && (
-          <div className="col-span-full bg-white border border-slate-100 p-10 rounded-[2rem] flex flex-col items-center justify-center text-slate-400 text-center space-y-2">
+          );
+        })}
+
+        {filteredGroups.length === 0 && (
+          <div className="bg-white border border-slate-100 p-10 rounded-[2rem] flex flex-col items-center justify-center text-slate-400 text-center space-y-2">
             <AlertCircle size={32} className="text-slate-200" />
             <p className="text-sm font-black text-slate-700">Không tìm thấy dữ liệu.</p>
           </div>
