@@ -38,6 +38,7 @@ export interface PracticeHistory {
 }
 
 export interface UserSettings {
+  nickname?: string;
   nativeLanguage: string;
   learningLanguages: string[];
   aiProvider: "gemini" | "openai" | "xai";
@@ -48,6 +49,10 @@ export interface UserSettings {
     xai: string[];
   };
   hobby?: string;
+  learningPurpose?: "hobby" | "work";
+  specialty?: string;
+  subSpecialty?: string;
+  onboarded?: boolean;
 }
 
 export interface GenerationStep {

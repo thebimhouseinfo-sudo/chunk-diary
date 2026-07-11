@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BookOpen, Play, Star, Trash2, AlertCircle } from "lucide-react";
+import { BookOpen, Play, Star, Trash2, AlertCircle, Volume2 } from "lucide-react";
 import { getChunks, deleteChunk } from "../db/indexedDb";
 import { Chunk } from "../types";
 import { speakText } from "../utils/tts";
@@ -48,6 +48,18 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
 
   const uniqueLanguages = Array.from(new Set(allChunks.map((c) => c.language)));
 
+  // Statistics calculation
+  const totalChunks = allChunks.length;
+  const totalPronunciations = allChunks.reduce((sum, chunk) => sum + (chunk.timesPracticed || 0), 0);
+  const starCounts = {
+    0: allChunks.filter((c) => (c.stars || 0) === 0).length,
+    1: allChunks.filter((c) => c.stars === 1).length,
+    2: allChunks.filter((c) => c.stars === 2).length,
+    3: allChunks.filter((c) => c.stars === 3).length,
+    4: allChunks.filter((c) => c.stars === 4).length,
+    5: allChunks.filter((c) => c.stars === 5).length,
+  };
+
   return (
     <div className="space-y-6 sm:space-y-8 animate-pageFadeIn text-left">
       {/* Header */}
@@ -65,12 +77,67 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
         {filteredChunks.length > 0 && (
           <button
             onClick={() => onStartPractice(filteredChunks)}
-            className="flex items-center gap-2 bg-vibrant-coral hover:bg-vibrant-coral/90 text-white px-5 sm:px-6 py-3 rounded-2xl font-black shadow-lg shadow-vibrant-coral/20 transition-all active:scale-95 w-full sm:w-auto justify-center text-xs uppercase tracking-tight"
+            className="flex items-center gap-2 bg-vibrant-coral hover:bg-vibrant-coral/90 text-white px-5 sm:px-6 py-3 rounded-2xl font-black shadow-lg shadow-vibrant-coral/20 transition-all active:scale-95 w-full sm:w-auto justify-center text-xs uppercase tracking-tight cursor-pointer border-none"
           >
             <Play size={16} fill="currentColor" />
             Luyện Tập ({filteredChunks.length})
           </button>
         )}
+      </div>
+
+      {/* Dashboard Statistics Widget */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 text-left">
+        {/* Card 1: Total Chunks */}
+        <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng số Chunks</span>
+            <div className="p-2.5 bg-vibrant-indigo/10 text-vibrant-indigo rounded-xl">
+              <BookOpen size={18} />
+            </div>
+          </div>
+          <div>
+            <h3 className="font-display text-3xl sm:text-4xl font-black text-vibrant-indigo">{totalChunks}</h3>
+            <p className="text-[10px] sm:text-xs text-slate-500 font-medium mt-1">Cụm từ đã lưu trữ trong thiết bị</p>
+          </div>
+        </div>
+
+        {/* Card 2: Total Pronunciations */}
+        <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đã phát âm</span>
+            <div className="p-2.5 bg-vibrant-coral/10 text-vibrant-coral rounded-xl">
+              <Volume2 size={18} />
+            </div>
+          </div>
+          <div>
+            <h3 className="font-display text-3xl sm:text-4xl font-black text-vibrant-coral">{totalPronunciations} LẦN</h3>
+            <p className="text-[10px] sm:text-xs text-slate-500 font-medium mt-1">Tổng lượt ghi âm phát âm thành công</p>
+          </div>
+        </div>
+
+        {/* Card 3: Stars distribution breakdown */}
+        <div className="md:col-span-4 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-3.5">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pb-1 border-b border-slate-100">Phân loại số sao</span>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
+            {[5, 4, 3, 2, 1, 0].map((star) => (
+              <div key={star} className="flex items-center justify-between text-xs font-semibold">
+                <div className="flex items-center gap-1 text-slate-500 font-mono">
+                  {star > 0 ? (
+                    <>
+                      <span className="font-black text-slate-700">{star}</span>
+                      <Star size={11} className="text-vibrant-yellow" fill="currentColor" />
+                    </>
+                  ) : (
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Chưa luyện</span>
+                  )}
+                </div>
+                <span className="font-bold font-mono text-slate-800 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100">
+                  {starCounts[star as 0 | 1 | 2 | 3 | 4 | 5]} câu
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -152,9 +219,9 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => handleDeleteChunk(chunk.id)} className="p-2 text-slate-300 hover:text-vibrant-coral transition-all"><Trash2 size={14} /></button>
-                <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-slate-50 rounded-xl transition-all">🔊</button>
-                <button onClick={() => onStartPractice([chunk])} className="p-2.5 bg-vibrant-indigo/10 text-vibrant-indigo rounded-xl transition-all"><Play size={14} fill="currentColor" /></button>
+                <button onClick={() => handleDeleteChunk(chunk.id)} className="p-2 text-slate-300 hover:text-vibrant-coral transition-all cursor-pointer border-none bg-transparent"><Trash2 size={14} /></button>
+                <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-slate-50 rounded-xl transition-all cursor-pointer border-none">🔊</button>
+                <button onClick={() => onStartPractice([chunk])} className="p-2.5 bg-vibrant-indigo/10 text-vibrant-indigo rounded-xl transition-all cursor-pointer border-none"><Play size={14} fill="currentColor" /></button>
               </div>
             </div>
           </div>
