@@ -210,7 +210,6 @@ export default function App() {
             &copy; 2026 Language Chunk Diary. All rights reserved.
           </p>
           <p className="text-[10px] text-neutral-300 font-mono">
-            Powered by Gemini 3.5 • Chunk-Based Pronunciation Method
           </p>
         </div>
       </footer>
