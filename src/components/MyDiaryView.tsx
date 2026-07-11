@@ -45,6 +45,17 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Onboarding Modal States
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardForm, setOnboardForm] = useState({
+    nickname: "",
+    nativeLanguage: "Vietnamese",
+    learningLanguage: "English",
+    learningPurpose: "hobby" as "hobby" | "work",
+    specialty: "Công nghệ thông tin",
+    subSpecialty: ""
+  });
+
   const steps = [
     { name: "Đang kết nối", description: "Đang gửi yêu cầu của bạn tới máy chủ hàng đợi..." },
     { name: "Đang xếp hàng", description: "Đang xếp hàng chờ đến lượt xử lý (Pending)..." },
@@ -55,12 +66,24 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   useEffect(() => {
     fetchDiaries();
     const saved = localStorage.getItem("user_settings");
-    if (saved) setSettings(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setSettings(parsed);
+      if (!parsed.onboarded) {
+        setShowOnboarding(true);
+      }
+    } else {
+      setShowOnboarding(true);
+    }
   }, []);
 
   const fetchDiaries = async () => {
     const all = await getDiaries();
     setDiaries(all);
+    // If there is at least one diary and no diary is selected, select the latest one automatically
+    if (all.length > 0 && !selectedDiary) {
+      handleSelectDiary(all[0]);
+    }
   };
 
   const handleSelectDiary = async (diary: Diary) => {
@@ -81,13 +104,51 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
     e.stopPropagation();
     if (confirm("Xóa nhật ký này?")) {
       await deleteDiary(id);
-      fetchDiaries();
+      const remainingDiaries = diaries.filter(d => d.id !== id);
+      setDiaries(remainingDiaries);
       if (selectedDiary?.id === id) {
-        setSelectedDiary(null);
-        setSelectedDiaryMUs([]);
-        setSelectedDiaryChunks([]);
+        if (remainingDiaries.length > 0) {
+          handleSelectDiary(remainingDiaries[0]);
+        } else {
+          setSelectedDiary(null);
+          setSelectedDiaryMUs([]);
+          setSelectedDiaryChunks([]);
+        }
       }
     }
+  };
+
+  const handleOnboardingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onboardForm.nickname.trim() || !onboardForm.nativeLanguage.trim() || !onboardForm.learningLanguage.trim()) {
+      alert("Vui lòng điền đầy đủ nickname, ngôn ngữ mẹ đẻ và ngôn ngữ muốn học!");
+      return;
+    }
+
+    const saved = localStorage.getItem("user_settings");
+    let currentSettings = saved ? JSON.parse(saved) : {};
+
+    const updatedSettings: UserSettings = {
+      ...currentSettings,
+      nickname: onboardForm.nickname.trim(),
+      nativeLanguage: onboardForm.nativeLanguage.trim(),
+      learningLanguages: [onboardForm.learningLanguage.trim()],
+      learningPurpose: onboardForm.learningPurpose,
+      specialty: onboardForm.learningPurpose === "work" ? onboardForm.specialty : "",
+      subSpecialty: onboardForm.learningPurpose === "work" ? onboardForm.subSpecialty.trim() : "",
+      onboarded: true,
+      aiProvider: currentSettings.aiProvider || "gemini",
+      apiKey: currentSettings.apiKey || "",
+      modelPriorityList: currentSettings.modelPriorityList || {
+        gemini: ["gemini-1.5-flash", "gemini-1.5-pro"],
+        openai: ["gpt-4o-mini", "gpt-4o"],
+        xai: ["grok-beta"]
+      }
+    };
+
+    localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
+    setSettings(updatedSettings);
+    setShowOnboarding(false);
   };
 
   const handleGenerate = async () => {
@@ -104,9 +165,15 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
         createdAt: new Date().toISOString()
       });
 
+      // Include professional alignment context if learning purpose is work
+      let careerContext = "";
+      if (settings.learningPurpose === "work" && settings.specialty) {
+        careerContext = `\nBối cảnh nghề nghiệp của người học: Chuyên ngành ${settings.specialty}${settings.subSpecialty ? ` (chuyên sâu: ${settings.subSpecialty})` : ""}. Hãy tối ưu hóa việc phân tích và giải nghĩa các language chunks sát với chuyên môn này để giúp người học áp dụng hiệu quả nhất vào công việc.`;
+      }
+
       const prompt = `Hãy xử lý nhật ký sau: "${content}".
       Ngôn ngữ gốc: ${settings.nativeLanguage}.
-      Ngôn ngữ học: ${settings.learningLanguages.join(", ")}.
+      Ngôn ngữ học: ${settings.learningLanguages.join(", ")}.${careerContext}
       Trả về JSON với cấu trúc meaningUnits. English Pivot là bắt buộc.`;
 
       const aiResponse = await callBackgroundAIService(prompt, (status, message) => {
@@ -168,24 +235,148 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
-      {/* Left: Input Form & History Toggle (Mobile) */}
-      <div className="lg:col-span-5 space-y-6">
-        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-vibrant-indigo font-display font-black text-xl">
-              <Plus className="text-vibrant-coral" size={24} />
-              <h2>Viết Nhật Ký</h2>
+    <div className="space-y-6 sm:space-y-8">
+      {/* Onboarding Modal Popup Overlay */}
+      {showOnboarding && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 overflow-y-auto animate-pageFadeIn">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 border border-slate-100 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto my-8 text-left">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-vibrant-coral rounded-2xl flex items-center justify-center text-white font-black shadow-md mx-auto">
+                <Sparkles size={24} />
+              </div>
+              <h2 className="font-display font-black text-xl sm:text-2xl text-slate-900">Chào mừng bạn đến với ChunkDiary!</h2>
+              <p className="text-xs text-slate-500 font-medium">Hãy chia sẻ một chút thông tin để bắt đầu trải nghiệm học tập tối ưu nhất nhé.</p>
             </div>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="lg:hidden p-2 bg-slate-50 rounded-xl text-slate-500"
-            >
-              <History size={20} />
-            </button>
-          </div>
 
-          <div className="space-y-4">
+            <form onSubmit={handleOnboardingSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nickname của bạn</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Minh, Anna..."
+                  value={onboardForm.nickname}
+                  onChange={(e) => setOnboardForm({ ...onboardForm, nickname: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ mẹ đẻ</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: Vietnamese"
+                    value={onboardForm.nativeLanguage}
+                    onChange={(e) => setOnboardForm({ ...onboardForm, nativeLanguage: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngôn ngữ muốn học</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: English"
+                    value={onboardForm.learningLanguage}
+                    onChange={(e) => setOnboardForm({ ...onboardForm, learningLanguage: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bạn học vì sở thích hay công việc?</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setOnboardForm({ ...onboardForm, learningPurpose: "hobby" })}
+                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${
+                      onboardForm.learningPurpose === "hobby"
+                        ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
+                        : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
+                    }`}
+                  >
+                    Sở thích
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnboardForm({ ...onboardForm, learningPurpose: "work" })}
+                    className={`p-3 rounded-2xl text-xs font-bold border transition-all ${
+                      onboardForm.learningPurpose === "work"
+                        ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
+                        : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
+                    }`}
+                  >
+                    Công việc
+                  </button>
+                </div>
+              </div>
+
+              {onboardForm.learningPurpose === "work" && (
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-pageFadeIn">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chuyên ngành</label>
+                    <select
+                      value={onboardForm.specialty}
+                      onChange={(e) => setOnboardForm({ ...onboardForm, specialty: e.target.value })}
+                      className="w-full bg-white border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all cursor-pointer"
+                    >
+                      <option value="Công nghệ thông tin">Công nghệ thông tin</option>
+                      <option value="Y học / Y tế">Y học / Y tế</option>
+                      <option value="Kinh tế / Tài chính">Kinh tế / Tài chính</option>
+                      <option value="Kỹ thuật / Sản xuất">Kỹ thuật / Sản xuất</option>
+                      <option value="Ngôn ngữ / Sư phạm">Ngôn ngữ / Sư phạm</option>
+                      <option value="Khác">Khác</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngành con / Mô tả chi tiết</label>
+                    <input
+                      type="text"
+                      placeholder="Ví dụ: Lập trình Web, Quản trị mạng, Tim mạch..."
+                      value={onboardForm.subSpecialty}
+                      onChange={(e) => setOnboardForm({ ...onboardForm, subSpecialty: e.target.value })}
+                      className="w-full bg-white border border-slate-100 rounded-2xl px-4 py-3 text-sm font-semibold outline-none focus:border-vibrant-indigo transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-vibrant-mint/10 border border-vibrant-mint/20 rounded-2xl text-[11px] text-vibrant-indigo font-medium leading-relaxed">
+                👉 <strong>Giải thích:</strong> Dữ liệu dùng để tối ưu chunks sát với chuyên môn của bạn, giúp bạn học hiệu quả hơn.
+              </div>
+
+              <button
+                type="submit"
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-black uppercase tracking-tight shadow-lg transition-all active:scale-95 text-xs"
+              >
+                Bắt đầu ngay
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Top: Full Width Write Diary Card */}
+      <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-5 w-full text-left">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-vibrant-indigo font-display font-black text-xl">
+            <Plus className="text-vibrant-coral" size={24} />
+            <h2>Viết Nhật Ký Mới</h2>
+          </div>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="lg:hidden p-2 bg-slate-50 rounded-xl text-slate-500"
+          >
+            <History size={20} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-2 space-y-4">
             <input
               type="text"
               placeholder="Tiêu đề (Tùy chọn)..."
@@ -197,29 +388,44 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
               placeholder="Hôm nay của bạn thế nào? Hãy viết bằng tiếng Việt..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={6}
+              rows={5}
               className="w-full bg-slate-50 border border-slate-100 focus:border-vibrant-indigo rounded-2xl px-4 py-3 text-sm font-medium outline-none transition-all resize-none"
             />
+          </div>
+          <div className="flex flex-col justify-between bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-4">
+            <div className="text-xs text-slate-500 space-y-2.5">
+              <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                <Sparkles size={14} className="text-vibrant-coral" /> Gợi ý viết nhật ký:
+              </p>
+              <ul className="list-disc pl-4 space-y-1.5">
+                <li>Viết ngắn gọn 1-3 câu đơn giản.</li>
+                <li>Nên viết về chủ đề hàng ngày hoặc công việc của bạn.</li>
+                <li>Hệ thống sẽ tự động tách câu thành các <strong>language chunks</strong> để luyện tập.</li>
+              </ul>
+            </div>
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !content.trim()}
-              className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black uppercase tracking-tight shadow-lg transition-all active:scale-95"
+              className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black uppercase tracking-tight shadow-lg transition-all active:scale-95 text-xs cursor-pointer"
             >
               <Send size={18} />
-              {isGenerating ? "Đang xếp hàng..." : "Phân tích bằng AI"}
+              {isGenerating ? "Đang xếp hàng..." : "Tạo chunks"}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Desktop History / Mobile Drawer-like history */}
-        <div className={`${showHistory ? "block" : "hidden"} lg:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden`}>
+      {/* Bottom Layout: History Left (Desktop) & Progress / Result Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
+        {/* Left Column: History list (lg:col-span-4) */}
+        <div className={`${showHistory ? "block" : "hidden"} lg:block lg:col-span-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden h-fit text-left`}>
           <div className="p-5 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
             <h3 className="font-display font-black text-slate-800 text-sm uppercase tracking-wider flex items-center gap-2">
-              <History size={16} /> Lịch sử
+              <History size={16} /> Lịch sử nhật ký
             </h3>
             <span className="bg-white px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-400 border border-slate-100">{diaries.length}</span>
           </div>
-          <div className="max-h-[400px] overflow-y-auto divide-y divide-slate-50">
+          <div className="max-h-[500px] overflow-y-auto divide-y divide-slate-50">
             {diaries.map((d) => (
               <div
                 key={d.id}
@@ -230,7 +436,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
                   <h4 className="text-sm font-bold text-slate-800 truncate">{d.title}</h4>
                   <p className="text-[10px] text-slate-400 font-medium">{new Date(d.createdAt).toLocaleDateString("vi-VN")}</p>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 text-slate-400">
                   <button onClick={(e) => handleDelete(d.id!, e)} className="p-2 text-slate-300 hover:text-vibrant-coral"><Trash2 size={14} /></button>
                   <ChevronRight size={16} className="text-slate-200" />
                 </div>
@@ -239,112 +445,112 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
             {diaries.length === 0 && <div className="p-8 text-center text-slate-400 text-xs italic">Chưa có bài viết nào.</div>}
           </div>
         </div>
-      </div>
 
-      {/* Right: Results / Progress */}
-      <div className="lg:col-span-7 space-y-6">
-        {errorDetails && (
-          <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-start gap-3.5 text-rose-900 animate-pageFadeIn shadow-sm">
-            <AlertTriangle className="text-vibrant-coral shrink-0 mt-0.5" size={20} />
-            <div className="space-y-1">
-              <h4 className="font-display font-black text-sm uppercase tracking-wider">Lỗi xử lý AI</h4>
-              <p className="text-xs font-medium leading-relaxed">{errorDetails}</p>
-              <button
-                onClick={() => setErrorDetails(null)}
-                className="text-[10px] font-black uppercase bg-white/60 hover:bg-white text-rose-900 px-3 py-1.5 rounded-lg border border-rose-200 transition-colors mt-2"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        )}
-
-        {isGenerating && (
-          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="font-display font-black text-slate-900">AI Queue Pipeline</h3>
-              <div className="flex items-center gap-2 text-[10px] text-vibrant-indigo bg-vibrant-indigo/10 px-3 py-1 rounded-full animate-pulse">
-                <span className="w-1.5 h-1.5 bg-vibrant-indigo rounded-full" />
-                <span className="font-black">IN QUEUE</span>
+        {/* Right Column: AI Queue Pipeline & Selected Diary Detail (lg:col-span-8) */}
+        <div className="lg:col-span-8 space-y-6 text-left">
+          {errorDetails && (
+            <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] flex items-start gap-3.5 text-rose-900 animate-pageFadeIn shadow-sm">
+              <AlertTriangle className="text-vibrant-coral shrink-0 mt-0.5" size={20} />
+              <div className="space-y-1">
+                <h4 className="font-display font-black text-sm uppercase tracking-wider">Lỗi xử lý AI</h4>
+                <p className="text-xs font-medium leading-relaxed">{errorDetails}</p>
+                <button
+                  onClick={() => setErrorDetails(null)}
+                  className="text-[10px] font-black uppercase bg-white/60 hover:bg-white text-rose-900 px-3 py-1.5 rounded-lg border border-rose-200 transition-colors mt-2"
+                >
+                  Đóng
+                </button>
               </div>
             </div>
-            <div className="space-y-4">
-              {steps.map((step, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <div className="pt-1">
-                    {idx < currentStep ? <CheckCircle size={18} className="text-vibrant-mint" /> :
-                     idx === currentStep ? <div className="w-4 h-4 border-2 border-vibrant-indigo border-t-transparent rounded-full animate-spin" /> :
-                     <div className="w-4 h-4 rounded-full bg-slate-100" />}
-                  </div>
-                  <div className="flex-1">
-                    <p className={`text-sm font-bold ${idx === currentStep ? "text-vibrant-indigo" : "text-slate-500"}`}>{step.name}</p>
-                    <p className="text-[10px] text-slate-400">
-                      {idx === currentStep && queueMessage ? queueMessage : step.description}
-                    </p>
-                  </div>
+          )}
+
+          {isGenerating && (
+            <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-md space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <h3 className="font-display font-black text-slate-900">AI Queue Pipeline</h3>
+                <div className="flex items-center gap-2 text-[10px] text-vibrant-indigo bg-vibrant-indigo/10 px-3 py-1 rounded-full animate-pulse">
+                  <span className="w-1.5 h-1.5 bg-vibrant-indigo rounded-full" />
+                  <span className="font-black">IN QUEUE</span>
                 </div>
-              ))}
+              </div>
+              <div className="space-y-4">
+                {steps.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
+                    <div className="pt-1">
+                      {idx < currentStep ? <CheckCircle size={18} className="text-vibrant-mint" /> :
+                       idx === currentStep ? <div className="w-4 h-4 border-2 border-vibrant-indigo border-t-transparent rounded-full animate-spin" /> :
+                       <div className="w-4 h-4 rounded-full bg-slate-100" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-bold ${idx === currentStep ? "text-vibrant-indigo" : "text-slate-500"}`}>{step.name}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {idx === currentStep && queueMessage ? queueMessage : step.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {selectedDiary && !isGenerating && (
-          <div className="space-y-6 animate-pageFadeIn">
-            <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                <div>
-                  <span className="text-[10px] uppercase font-mono bg-vibrant-indigo/10 text-vibrant-indigo px-2.5 py-1 rounded-full font-black">Chi tiết</span>
-                  <h3 className="font-display font-black text-slate-900 text-xl pt-1">{selectedDiary.title}</h3>
+          {selectedDiary && !isGenerating && (
+            <div className="space-y-6 animate-pageFadeIn">
+              <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-mono bg-vibrant-indigo/10 text-vibrant-indigo px-2.5 py-1 rounded-full font-black">Chi tiết</span>
+                    <h3 className="font-display font-black text-slate-900 text-xl pt-1">{selectedDiary.title}</h3>
+                  </div>
+                  {selectedDiaryChunks.length > 0 && (
+                    <button
+                      onClick={() => onStartPractice(selectedDiaryChunks)}
+                      className="flex items-center justify-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-tight shadow-md cursor-pointer"
+                    >
+                      <Play size={12} fill="currentColor" /> Luyện tập ({selectedDiaryChunks.length})
+                    </button>
+                  )}
                 </div>
-                {selectedDiaryChunks.length > 0 && (
-                  <button
-                    onClick={() => onStartPractice(selectedDiaryChunks)}
-                    className="flex items-center justify-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-tight shadow-md"
-                  >
-                    <Play size={12} fill="currentColor" /> Luyện tập ({selectedDiaryChunks.length})
-                  </button>
-                )}
+                <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm text-slate-600 italic border border-slate-100">
+                  "{selectedDiary.content}"
+                </div>
               </div>
-              <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm text-slate-600 italic border border-slate-100">
-                "{selectedDiary.content}"
-              </div>
-            </div>
 
-            <div className="space-y-4">
-              {selectedDiaryMUs.map((mu, idx) => {
-                const chunks = selectedDiaryChunks.filter(c => c.meaningUnitId === mu.id);
-                return (
-                  <div key={mu.id} className="bg-white border border-slate-100 rounded-[1.5rem] p-5 sm:p-6 space-y-4 shadow-sm">
-                    <div className="flex items-start gap-3 border-b border-slate-50 pb-3">
-                      <span className="w-6 h-6 rounded-lg bg-vibrant-indigo text-white flex items-center justify-center font-mono text-[10px] font-black shrink-0">{idx + 1}</span>
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">{mu.nativeText}</p>
-                        <p className="text-[10px] text-vibrant-coral font-bold italic pt-1">Pivot: "{mu.englishPivot}"</p>
+              <div className="space-y-4">
+                {selectedDiaryMUs.map((mu, idx) => {
+                  const chunks = selectedDiaryChunks.filter(c => c.meaningUnitId === mu.id);
+                  return (
+                    <div key={mu.id} className="bg-white border border-slate-100 rounded-[1.5rem] p-5 sm:p-6 space-y-4 shadow-sm">
+                      <div className="flex items-start gap-3 border-b border-slate-50 pb-3">
+                        <span className="w-6 h-6 rounded-lg bg-vibrant-indigo text-white flex items-center justify-center font-mono text-[10px] font-black shrink-0">{idx + 1}</span>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{mu.nativeText}</p>
+                          <p className="text-[10px] text-vibrant-coral font-bold italic pt-1">Pivot: "{mu.englishPivot}"</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {chunks.map(chunk => (
+                          <div key={chunk.id} className="bg-slate-50/50 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-3">
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[9px] font-black text-vibrant-indigo bg-vibrant-indigo/10 px-1.5 py-0.5 rounded">{chunk.language}</span>
+                                <span className="text-sm font-black text-slate-900">{chunk.text}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-medium flex flex-wrap gap-x-3">
+                                <span>Nghĩa: <strong className="text-slate-700">{chunk.meaning}</strong></span>
+                                {chunk.ipa && <span>IPA: <strong className="text-vibrant-indigo font-mono">{chunk.ipa}</strong></span>}
+                              </div>
+                            </div>
+                            <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer">🔊</button>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <div className="space-y-3">
-                      {chunks.map(chunk => (
-                        <div key={chunk.id} className="bg-slate-50/50 p-3 sm:p-4 rounded-xl flex items-center justify-between gap-3">
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] font-black text-vibrant-indigo bg-vibrant-indigo/10 px-1.5 py-0.5 rounded">{chunk.language}</span>
-                              <span className="text-sm font-black text-slate-900">{chunk.text}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-medium flex flex-wrap gap-x-3">
-                              <span>Nghĩa: <strong className="text-slate-700">{chunk.meaning}</strong></span>
-                              {chunk.ipa && <span>IPA: <strong className="text-vibrant-indigo font-mono">{chunk.ipa}</strong></span>}
-                            </div>
-                          </div>
-                          <button onClick={() => speakText(chunk.text, chunk.language)} className="p-2.5 bg-white border border-slate-100 rounded-lg shadow-sm">🔊</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
