@@ -208,30 +208,48 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 bg-white p-4 sm:p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-        <select
-          value={selectedLanguage}
-          onChange={(e) => setSelectedLanguage(e.target.value)}
-          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none transition-all cursor-pointer"
+      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 sm:p-5 rounded-[2rem] border border-slate-100 shadow-sm items-center justify-between">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none transition-all cursor-pointer"
+          >
+            <option value="all">Tất cả ngôn ngữ</option>
+            {uniqueLanguages.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+          <select
+            value={selectedStarFilter}
+            onChange={(e) => setSelectedStarFilter(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none transition-all cursor-pointer"
+          >
+            <option value="all">Tất cả số sao</option>
+            <option value="0">Chưa luyện (0 sao)</option>
+            <option value="1">1 sao (Yếu)</option>
+            <option value="2">2 sao (Khá)</option>
+            <option value="3">3 sao (Tốt)</option>
+            <option value="4">4 sao (Rất tốt)</option>
+            <option value="5">5 sao (Xuất sắc)</option>
+          </select>
+        </div>
+        <button
+          onClick={() => {
+            const allFilteredChunkIds = filteredGroups.flatMap(g => g.chunks).map(c => c.id!);
+            const allSelected = allFilteredChunkIds.every(id => selectedChunkIds.has(id));
+            const newSelected = new Set(selectedChunkIds);
+            if (allSelected) {
+              allFilteredChunkIds.forEach(id => newSelected.delete(id));
+            } else {
+              allFilteredChunkIds.forEach(id => newSelected.add(id));
+            }
+            setSelectedChunkIds(newSelected);
+          }}
+          className="w-full md:w-auto shrink-0 flex items-center justify-center gap-2 bg-vibrant-indigo hover:bg-vibrant-indigo/90 text-white px-5 py-3 rounded-2xl font-black shadow-lg shadow-vibrant-indigo/20 transition-all active:scale-95 text-xs uppercase tracking-tight cursor-pointer border-none"
         >
-          <option value="all">Tất cả ngôn ngữ</option>
-          {uniqueLanguages.map((l) => (
-            <option key={l} value={l}>{l}</option>
-          ))}
-        </select>
-        <select
-          value={selectedStarFilter}
-          onChange={(e) => setSelectedStarFilter(e.target.value)}
-          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none transition-all cursor-pointer"
-        >
-          <option value="all">Tất cả số sao</option>
-          <option value="0">Chưa luyện (0 sao)</option>
-          <option value="1">1 sao (Yếu)</option>
-          <option value="2">2 sao (Khá)</option>
-          <option value="3">3 sao (Tốt)</option>
-          <option value="4">4 sao (Rất tốt)</option>
-          <option value="5">5 sao (Xuất sắc)</option>
-        </select>
+          {filteredGroups.flatMap(g => g.chunks).map(c => c.id!).every(id => selectedChunkIds.has(id)) && filteredGroups.flatMap(g => g.chunks).length > 0 ? "Bỏ chọn tất cả" : "Chọn tất cả đã lọc"}
+        </button>
       </div>
 
       {/* Semantic Groups List */}
