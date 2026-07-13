@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, Keyboard, Sparkles, Volume2 } from "lucide-react";
 
 interface VoiceInputProps {
@@ -15,13 +15,15 @@ export default function VoiceInput({
   const [isHolding, setIsHolding] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
   const [isMicReady, setIsMicReady] = useState(false);
-  const [isRecognitionStarted, setIsRecognitionStarted] = useState(false);
+  const [recognitionState, setRecognitionState] = useState<'idle' | 'initializing' | 'listening'>('idle');
   const recognitionRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const waveformTimeoutRef = useRef<any>(null);
+  const pointerActiveRef = useRef(false);
 
   // Initialize microphone and audio analysis on mount
   useEffect(() => {
@@ -34,32 +36,12 @@ export default function VoiceInput({
             autoGainControl: true
           } 
         });
-        streamRef.current = stream;
         
-        // Set up audio context for real-time amplitude detection
-        audioContextRef.current = new AudioContext();
-        analyserRef.current = audioContextRef.current.createAnalyser();
-        analyserRef.current.fftSize = 64;
-        sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-        sourceRef.current.connect(analyserRef.current);
+        // Stop the stream immediately after getting permission
+        // This saves battery, avoids persistent mic icon on Android, and prevents Safari from keeping audio session
+        stream.getTracks().forEach(track => track.stop());
         
         setIsMicReady(true);
-        
-        // Start monitoring amplitude
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        
-        const updateAmplitude = () => {
-          if (analyserRef.current && isHolding && isRecognitionStarted) {
-            analyserRef.current.getByteFrequencyData(dataArray);
-            const values = Array.from(dataArray.slice(0, 8)).map(v => Math.max(10, v * 0.6));
-            setAmplitude(values);
-          } else if (!isHolding || !isRecognitionStarted) {
-            setAmplitude([10, 10, 10, 10, 10]);
-          }
-          requestAnimationFrame(updateAmplitude);
-        };
-        
-        updateAmplitude();
         
       } catch (err) {
         console.error("Mic initialization failed:", err);
@@ -78,16 +60,24 @@ export default function VoiceInput({
         streamRef.current.getTracks().forEach(track => track.stop());
       }
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (waveformTimeoutRef.current) clearTimeout(waveformTimeoutRef.current);
     };
   }, []);
 
-  const startListening = async () => {
+  const startListening = useCallback(async () => {
+    if (pointerActiveRef.current) return; // Prevent double-triggering
+    pointerActiveRef.current = true;
+    
     setIsHolding(true);
+    setRecognitionState('initializing');
     onTranscriptionStart();
 
     // Wait for mic to be ready before starting recognition
     if (!isMicReady) {
       console.log("Waiting for mic to be ready...");
+      pointerActiveRef.current = false;
+      setIsHolding(false);
+      setRecognitionState('idle');
       return;
     }
 
@@ -120,48 +110,68 @@ export default function VoiceInput({
         } else if (event.error === 'not-allowed') {
           console.log("Microphone permission not allowed");
         }
+        setRecognitionState('idle');
         onTranscriptionEnd("");
       };
 
       recognition.onend = () => {
         setIsHolding(false);
-        setIsRecognitionStarted(false);
+        setRecognitionState('idle');
       };
 
-      // Wait for actual microphone activation before showing waveform
-      // Use onstart + onaudiostart/onsoundstart combination for best cross-browser support
+      // Waveform activation with priority order and fallback timeout
+      let waveformActivated = false;
+      
+      const activateWaveform = () => {
+        if (!waveformActivated) {
+          waveformActivated = true;
+          setRecognitionState('listening');
+        }
+      };
+
+      // Priority 1: onstart fires when recognition begins
       recognition.onstart = () => {
         console.log("SpeechRecognition started");
-        setIsRecognitionStarted(true);
+        activateWaveform();
       };
 
-      // Chrome/Edge: onaudiostart fires when audio is actually being captured
+      // Priority 2: onaudiostart fires when audio capture begins (Chrome/Edge)
       recognition.onaudiostart = () => {
         console.log("Audio capture started");
-        setIsRecognitionStarted(true);
+        activateWaveform();
       };
 
-      // Firefox: onsoundstart fires when sound is detected
+      // Priority 3: onsoundstart fires when sound is detected (Firefox)
       recognition.onsoundstart = () => {
         console.log("Sound detected");
-        setIsRecognitionStarted(true);
+        activateWaveform();
       };
 
-      // Safari: onspeechstart fires when speech is detected
+      // Priority 4: onspeechstart fires when speech is detected (Safari)
       recognition.onspeechstart = () => {
         console.log("Speech detected");
-        setIsRecognitionStarted(true);
+        activateWaveform();
       };
 
       recognitionRef.current = recognition;
       
-      // Start recognition - waveform will only show after onstart/onaudiostart fires
+      // Start recognition
       try {
         recognition.start();
+        
+        // Fallback timeout: if no event fires within 300ms, show waveform anyway
+        waveformTimeoutRef.current = setTimeout(() => {
+          if (!waveformActivated && isHolding) {
+            console.log("Waveform timeout fallback - showing waveform");
+            activateWaveform();
+          }
+        }, 300);
+        
       } catch (e) {
         console.error("Failed to start recognition:", e);
         setIsHolding(false);
-        setIsRecognitionStarted(false);
+        setRecognitionState('idle');
+        pointerActiveRef.current = false;
         onTranscriptionEnd("");
       }
     } else {
@@ -169,23 +179,55 @@ export default function VoiceInput({
       setTimeout(() => {
         onTranscriptionEnd("Hôm nay mình dậy hơi muộn. Sau đó mình đưa con đi học.");
         setIsHolding(false);
+        setRecognitionState('idle');
+        pointerActiveRef.current = false;
       }, 2000);
     }
-  };
+  }, [isMicReady, onTranscriptionStart, onTranscriptionEnd, isHolding]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     if (recognitionRef.current && isHolding) {
       recognitionRef.current.stop();
     }
     setIsHolding(false);
-    setIsRecognitionStarted(false);
-  };
+    setRecognitionState('idle');
+    pointerActiveRef.current = false;
+    
+    // Clear waveform timeout
+    if (waveformTimeoutRef.current) {
+      clearTimeout(waveformTimeoutRef.current);
+      waveformTimeoutRef.current = null;
+    }
+  }, [isHolding]);
+
+  // Handle pointer events for unified desktop/mobile interaction
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    startListening();
+  }, [startListening]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    stopListening();
+  }, [stopListening]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    stopListening();
+  }, [stopListening]);
+
+  const handlePointerLeave = useCallback(() => {
+    // Stop recording if pointer leaves the button while holding
+    if (isHolding) {
+      stopListening();
+    }
+  }, [isHolding, stopListening]);
 
   return (
     <div className="mic-input-container flex flex-col items-center justify-center py-1 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
       {/* Sóng âm sinh động - only shows when mic is actually active */}
       <div className="mic-waveform-container h-8 flex items-center justify-center gap-1.5 mb-1 w-full">
-        {isHolding && isRecognitionStarted && (
+        {isHolding && recognitionState === 'listening' && (
           <div className="flex items-center gap-1">
             <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={12} />
             {amplitude.map((h, i) => (
@@ -209,13 +251,13 @@ export default function VoiceInput({
           <Keyboard size={18} />
         </button>
 
-        {/* Nút Mic chính cỡ lớn - optimized for mobile */}
+        {/* Nút Mic chính cỡ lớn - optimized for mobile using Pointer Events */}
         <button
-          onMouseDown={startListening}
-          onMouseUp={stopListening}
-          onTouchStart={startListening}
-          onTouchEnd={stopListening}
-          className={`w-18 h-18 sm:w-24 sm:h-24 bg-gradient-to-tr from-vibrant-indigo to-vibrant-indigo/90 text-white rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer select-none active:scale-90 ${
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onPointerLeave={handlePointerLeave}
+          className={`w-18 h-18 sm:w-24 sm:h-24 bg-gradient-to-tr from-vibrant-indigo to-vibrant-indigo/90 text-white rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer select-none active:scale-90 touch-none ${
             isHolding
               ? "ring-6 ring-vibrant-indigo/25 scale-105 shadow-vibrant-indigo/20"
               : "hover:scale-102 shadow-vibrant-indigo/10"
@@ -230,7 +272,7 @@ export default function VoiceInput({
 
       <div className="text-xs text-slate-500 mt-2 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
         {isHolding ? (
-          isRecognitionStarted ? (
+          recognitionState === 'listening' ? (
             <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
           ) : (
             <span className="text-slate-400 animate-pulse">Đang khởi tạo micro...</span>
