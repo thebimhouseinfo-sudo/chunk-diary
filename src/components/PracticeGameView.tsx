@@ -242,7 +242,10 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
           </h2>
           {/* Display IPA for Latin-script languages, romanization for non-Latin */}
           {currentChunk.ipa && isLatinScript(currentChunk.language) && (
-            <p className="text-lg font-mono font-bold text-vibrant-indigo opacity-80 mt-3">
+            <p
+              className="text-lg font-bold text-vibrant-indigo opacity-80 mt-3"
+              style={{ fontFamily: "var(--font-ipa)" }}
+            >
               /{currentChunk.ipa}/
             </p>
           )}
