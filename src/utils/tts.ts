@@ -66,6 +66,10 @@ export function speakText(text: string, language: string): Promise<void> {
     };
 
     utterance.onerror = (e) => {
+      if (e.error === "interrupted" || e.error === "canceled") {
+        resolve();
+        return;
+      }
       console.error("Speech synthesis error", e);
       resolve();
     };

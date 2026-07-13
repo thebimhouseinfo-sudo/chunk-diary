@@ -15,6 +15,7 @@ import MyDiaryView from "./components/MyDiaryView";
 import MyChunksView from "./components/MyChunksView";
 import PracticeGameView from "./components/PracticeGameView";
 import SettingsView from "./components/SettingsView";
+import StoryChatView from "./components/story_chat/StoryChatView";
 import { MicPermissionModal } from "./components/MicPermissionModal";
 
 export default function App() {
@@ -106,7 +107,7 @@ export default function App() {
           {/* Nav Items */}
           <nav className="flex items-center gap-1 sm:gap-2">
             {navItems.map((tab) => {
-              const isActive = activeTab === tab.id;
+              const isActive = activeTab === tab.id || (tab.id === "diary" && activeTab === "story_chat");
               return (
                 <button
                   key={tab.id}
@@ -140,7 +141,7 @@ export default function App() {
       </header>
 
       {/* Main Content Stage container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-5 flex flex-col justify-center">
         
         {activeTab === "home" && (
           <HomeView
@@ -153,6 +154,14 @@ export default function App() {
           <MyDiaryView
             onStartPractice={handleStartPractice}
             onNavigate={(tab) => setActiveTab(tab)}
+          />
+        )}
+
+        {activeTab === "story_chat" && (
+          <StoryChatView
+            onBack={() => setActiveTab("home")}
+            onNavigate={(tab) => setActiveTab(tab)}
+            onStartPractice={handleStartPractice}
           />
         )}
 
@@ -179,7 +188,7 @@ export default function App() {
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-slate-100 px-2 pb-safe">
         <div className="flex items-center justify-around h-16">
           {navItems.map((tab) => {
-            const isActive = activeTab === tab.id;
+            const isActive = activeTab === tab.id || (tab.id === "diary" && activeTab === "story_chat");
             return (
               <button
                 key={tab.id}

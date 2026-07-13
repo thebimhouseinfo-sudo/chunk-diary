@@ -1,3 +1,4 @@
+import { getSettings, saveSettings } from "../db/userDb";
 import React, { useState, useEffect } from "react";
 import {
   User,
@@ -11,6 +12,8 @@ import {
   AlertCircle
 } from "lucide-react";
 import { UserSettings } from "../types";
+import { clearAllIndexedDb } from "../db/indexedDb"; // Import to clear IndexedDB
+import { clearAllUserDb } from "../db/userDb"; // Import to clear userDb
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<UserSettings>({
@@ -67,6 +70,21 @@ export default function SettingsView() {
         : "Tính năng Phục hồi dữ liệu (Restore) yêu cầu tài khoản Premium để đồng bộ đám mây."
     );
     setTimeout(() => setPlaceholderMessage(null), 4000);
+  };
+
+  const handleResetData = async () => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa tất cả dữ liệu ứng dụng? Hành động này không thể hoàn tác!")) {
+      try {
+        await clearAllIndexedDb();
+        await clearAllUserDb();
+        localStorage.clear();
+        alert("Tất cả dữ liệu đã được xóa. Ứng dụng sẽ tải lại.");
+        window.location.reload();
+      } catch (error) {
+        console.error("Lỗi khi xóa dữ liệu:", error);
+        alert("Đã xảy ra lỗi khi xóa dữ liệu. Vui lòng thử lại.");
+      }
+    }
   };
 
   return (
@@ -209,8 +227,8 @@ export default function SettingsView() {
                 </div>
               </div>
 
-              {settings.learningPurpose === "work" ? (
-                <div className="space-y-4 p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-100 animate-pageFadeIn">
+              {settings.learningPurpose === "work" && (
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-pageFadeIn">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chuyên ngành</label>
                     <select
@@ -247,80 +265,74 @@ export default function SettingsView() {
                     />
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-1.5 animate-pageFadeIn">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sở thích / Chủ đề quan tâm</label>
-                  <textarea
-                    value={settings.hobby || ""}
-                    onChange={(e) => setSettings({ ...settings, hobby: e.target.value })}
-                    placeholder="Ví dụ: Công nghệ, nấu ăn, du lịch, bóng đá..."
-                    rows={3}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-vibrant-indigo transition-all resize-none"
-                  />
-                </div>
               )}
             </div>
           </div>
 
-          {/* Action Row */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-7 py-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg active:scale-95 transition-all cursor-pointer"
-            >
-              <Check size={16} /> Lưu Thay Đổi
-            </button>
-          </div>
+          <button
+            type="submit"
+            className={`w-full flex items-center justify-center gap-2 px-5 py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all shadow-lg
+              ${saveSuccess
+                ? "bg-emerald-500 text-white shadow-emerald-500/30"
+                : "bg-vibrant-indigo text-white shadow-vibrant-indigo/30 hover:bg-vibrant-indigo/90"
+            }`}
+          >
+            {saveSuccess ? <Check size={18} /> : <Download size={18} />}
+            {saveSuccess ? "Đã Lưu Cấu Hình!" : "Lưu Cấu Hình"}
+          </button>
         </form>
 
-        {/* Side / Backup Panel */}
+        {/* Sidebar / Extra Actions */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-5">
-            <div className="flex items-center gap-2 text-vibrant-indigo">
-              <Briefcase size={20} className="text-vibrant-coral" />
-              <h3 className="font-display font-black text-base uppercase tracking-wider">Sao lưu & Đồng bộ</h3>
+          {/* Data Management Card */}
+          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+            <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
+              <Download size={20} className="text-vibrant-coral" />
+              <h3 className="font-display font-black text-lg text-slate-900">Quản lý dữ liệu</h3>
             </div>
 
-            <p className="text-xs text-slate-400 font-medium leading-relaxed">
-              Quản lý toàn bộ dữ liệu học tập của bạn. Tải xuống bản sao lưu để giữ an toàn hoặc nhập lại trên một thiết bị khác.
-            </p>
-
-            <div className="space-y-3 pt-2">
+            <div className="space-y-3">
               <button
-                type="button"
                 onClick={() => handlePlaceholderClick("download")}
-                className="w-full flex items-center justify-center gap-2.5 bg-vibrant-indigo/5 hover:bg-vibrant-indigo/10 text-vibrant-indigo py-3.5 rounded-2xl text-xs font-black transition-all cursor-pointer border-none relative overflow-hidden"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer"
               >
-                <Download size={15} /> Tải xuống dữ liệu
-                <span className="absolute top-1 right-2 bg-vibrant-coral text-white font-mono font-black text-[7px] px-1.5 py-0.5 rounded-md uppercase tracking-wider">PREMIUM</span>
+                <Download size={18} /> Tải xuống dữ liệu (Backup)
               </button>
-
               <button
-                type="button"
-                onClick={() => handlePlaceholderClick("restore")}
-                className="w-full flex items-center justify-center gap-2.5 bg-vibrant-indigo/5 hover:bg-vibrant-indigo/10 text-vibrant-indigo py-3.5 rounded-2xl text-xs font-black transition-all cursor-pointer border-none relative overflow-hidden"
+                onClick={() => handlePlaceholderClick("upload")}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer"
               >
-                <Upload size={15} /> Phục hồi dữ liệu
-                <span className="absolute top-1 right-2 bg-vibrant-coral text-white font-mono font-black text-[7px] px-1.5 py-0.5 rounded-md uppercase tracking-wider">PREMIUM</span>
+                <Upload size={18} /> Phục hồi dữ liệu (Restore)
               </button>
             </div>
+
+            {placeholderMessage && (
+              <div className="bg-orange-50/20 text-orange-700 text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 animate-pageFadeIn border border-orange-200">
+                <AlertCircle size={16} />
+                {placeholderMessage}
+              </div>
+            )}
           </div>
 
-          {/* Dynamic feedback / toast inside card */}
-          {placeholderMessage && (
-            <div className="bg-vibrant-indigo/10 border border-vibrant-indigo/20 p-4 rounded-2xl flex items-start gap-2.5 text-vibrant-indigo animate-pageFadeIn text-left shadow-xs">
-              <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <p className="text-[10px] font-bold leading-normal">{placeholderMessage}</p>
+          {/* Danger Zone Card */}
+          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-red-100 shadow-sm space-y-6">
+            <div className="flex items-center gap-3 text-red-600 border-b border-red-50 pb-4">
+              <AlertCircle size={20} className="text-red-500" />
+              <h3 className="font-display font-black text-lg text-red-600">Vùng nguy hiểm</h3>
             </div>
-          )}
+            <button
+              onClick={handleResetData}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-white bg-red-500 border border-red-600 hover:bg-red-600 transition-all cursor-pointer shadow-lg shadow-red-500/30"
+            >
+              <AlertCircle size={18} /> Xóa tất cả dữ liệu ứng dụng
+            </button>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              Hành động này sẽ xóa vĩnh viễn tất cả dữ liệu của bạn, bao gồm cấu hình, nhật ký và chunks đã tạo. Không thể hoàn tác.
+            </p>
+          </div>
+
         </div>
       </div>
-
-      {saveSuccess && (
-        <div className="fixed bottom-20 sm:bottom-8 right-1/2 translate-x-1/2 sm:translate-x-0 sm:right-8 bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-black animate-pageFadeIn z-[60]">
-          <Check size={16} /> Đã lưu cài đặt!
-        </div>
-      )}
     </div>
   );
 }

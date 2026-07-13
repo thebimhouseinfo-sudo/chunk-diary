@@ -1,3 +1,4 @@
+import { getSettings } from "../db/userDb";
 import React, { useState, useEffect } from "react";
 import { BookOpen, Flame, Award, Star, PlayCircle, PlusCircle, Languages, Sparkles } from "lucide-react";
 import { getDiaries, getChunks } from "../db/indexedDb";
@@ -6,6 +7,50 @@ import { Diary, Chunk, UserSettings } from "../types";
 interface HomeViewProps {
   onNavigate: (tab: string) => void;
   onStartPractice: (chunks: Chunk[]) => void;
+}
+
+function calculateStreak(diaries: Diary[]): number {
+  if (diaries.length === 0) return 0;
+  
+  // Get unique dates in YYYY-MM-DD local format
+  const uniqueDates = Array.from(new Set(
+    diaries.map(d => {
+      const date = new Date(d.createdAt);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    })
+  )).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  
+  if (uniqueDates.length === 0) return 0;
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+
+  const latestDateStr = uniqueDates[0];
+  if (latestDateStr !== todayStr && latestDateStr !== yesterdayStr) {
+    return 0;
+  }
+
+  let streak = 1;
+  let currentDate = new Date(latestDateStr);
+
+  for (let i = 1; i < uniqueDates.length; i++) {
+    const prevDate = new Date(currentDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-${String(prevDate.getDate()).padStart(2, "0")}`;
+
+    if (uniqueDates[i] === prevDateStr) {
+      streak++;
+      currentDate = new Date(uniqueDates[i]);
+    } else {
+      break;
+    }
+  }
+
+  return streak;
 }
 
 export default function HomeView({ onNavigate, onStartPractice }: HomeViewProps) {
@@ -21,12 +66,12 @@ export default function HomeView({ onNavigate, onStartPractice }: HomeViewProps)
       setDiaries(allDiaries);
       setChunks(allChunks);
 
-      const savedSettings = localStorage.getItem("user_settings");
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+      const parsed = await getSettings();
+      if (parsed) {
+        setSettings(parsed);
       }
 
-      setStreak(allDiaries.length > 0 ? 3 : 0);
+      setStreak(calculateStreak(allDiaries));
     };
     fetchData();
   }, []);
@@ -61,7 +106,7 @@ export default function HomeView({ onNavigate, onStartPractice }: HomeViewProps)
           </p>
           <div className="pt-2 sm:pt-4 flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
-              onClick={() => onNavigate("diary")}
+              onClick={() => onNavigate("story_chat")}
               className="flex items-center justify-center gap-2 bg-vibrant-coral hover:bg-vibrant-coral/90 text-white px-6 sm:px-7 py-3 sm:py-3.5 rounded-2xl font-black shadow-lg shadow-vibrant-coral/20 uppercase tracking-tight transition-all active:scale-95 cursor-pointer text-sm border-none"
             >
               <PlusCircle size={18} />

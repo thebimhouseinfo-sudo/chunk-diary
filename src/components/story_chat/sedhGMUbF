@@ -1,0 +1,481 @@
+import React, { useState, useEffect } from "react";
+import Header from "./components/Header";
+import Timeline from "./components/Timeline";
+import VoiceInput from "./components/VoiceInput";
+import DraftReview from "./components/DraftReview";
+import TypingInput from "./components/TypingInput";
+import SummaryView from "./components/SummaryView";
+import SettingsModal from "./components/SettingsModal";
+import UserProfileSetup from "../profile/UserProfileSetup";
+import { ChatMessage, ChatbotWorkflow } from "./workflow/chatbotWorkflow";
+import { StorySettings } from "./models/types";
+import { StoryService } from "./servises/storyService";
+import { useIdleTimer } from "./hooks/useIdleTimer";
+import { callGenerateChunks } from "../../utils/aiService";
+import { addDiary, getDb } from "../../db/indexedDb";
+
+interface StoryChatViewProps {
+  onBack: () => void;
+  onNavigate: (tab: string) => void;
+  onStartPractice?: (chunks: any[]) => void;
+}
+
+export default function StoryChatView({ onBack, onNavigate }: StoryChatViewProps) {
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [inputMode, setInputMode] = useState<"voice" | "typing">("voice");
+  const [isSummaryView, setIsSummaryView] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isIdleStopped, setIsIdleStopped] = useState(false);
+  
+  const [settings, setSettings] = useState<StorySettings>({
+    theme: "system",
+    defaultInputMode: "voice"
+  });
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draftText, setDraftText] = useState("");
+  const [isReviewMode, setIsReviewMode] = useState(false);
+  
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [hasRecommended, setHasRecommended] = useState(false);
+
+  useEffect(() => {
+    const checkProfileAndInit = async () => {
+      try {
+        const db = await getDb();
+        const tx = db.transaction("settings", "readonly");
+        const store = tx.objectStore("settings");
+        const profile = await new Promise((resolve) => {
+          const req = store.get("user_profile");
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        });
+        if (profile) {
+          setHasProfile(true);
+          await initSession();
+        } else {
+          setHasProfile(false);
+        }
+      } catch (err) {
+        console.warn("Error checking profile, default to active", err);
+        setHasProfile(true);
+        await initSession();
+      }
+    };
+
+    const initSession = async () => {
+      const savedSettings = localStorage.getItem("story_chat_settings");
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(parsed);
+        setInputMode(parsed.defaultInputMode || "voice");
+      }
+
+      const active = await StoryService.getActiveSession();
+      if (active) {
+        const restoredUserMsgs = active.messages.filter(m => m.sender === "user");
+        if (restoredUserMsgs.length > 0) {
+          const rebuiltMsgs: ChatMessage[] = [];
+          rebuiltMsgs.push({
+            id: "msg-greet-init",
+            sender: "bot",
+            text: ChatbotWorkflow.getGreeting(),
+            createdAt: active.createdAt
+          });
+
+          restoredUserMsgs.forEach((userMsg, idx) => {
+            rebuiltMsgs.push(userMsg);
+            const userMsgCountSoFar = idx + 1;
+            if (userMsgCountSoFar >= 50) {
+              rebuiltMsgs.push({
+                id: `msg-rec-${idx}-${Date.now()}`,
+                sender: "bot",
+                text: ChatbotWorkflow.getRecommendation(),
+                createdAt: userMsg.createdAt
+              });
+            } else {
+              rebuiltMsgs.push({
+                id: `msg-enc-${idx}-${Date.now()}`,
+                sender: "bot",
+                text: ChatbotWorkflow.getEncouragement(),
+                createdAt: userMsg.createdAt
+              });
+            }
+          });
+
+          setMessages(rebuiltMsgs);
+        } else {
+          const firstGreeting: ChatMessage = {
+            id: "msg-greet-" + Date.now(),
+            sender: "bot",
+            text: ChatbotWorkflow.getGreeting(),
+            createdAt: new Date().toISOString()
+          };
+          setMessages([firstGreeting]);
+        }
+
+        if (active.summary) {
+          setIsSummaryView(true);
+        }
+      } else {
+        const firstGreeting: ChatMessage = {
+          id: "msg-greet-" + Date.now(),
+          sender: "bot",
+          text: ChatbotWorkflow.getGreeting(),
+          createdAt: new Date().toISOString()
+        };
+        setMessages([firstGreeting]);
+        await StoryService.saveSession({
+          id: "active",
+          status: "unfinished",
+          messages: [firstGreeting],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+    };
+
+    if (hasProfile === null) {
+      checkProfileAndInit();
+    } else if (hasProfile === true && messages.length === 0) {
+      initSession();
+    }
+  }, [hasProfile]);
+
+  const handleProfileComplete = () => {
+    setHasProfile(true);
+  };
+
+  const handleUpdateSettings = (newSettings: Partial<StorySettings>) => {
+    const updated = { ...settings, ...newSettings };
+    setSettings(updated);
+    localStorage.setItem("story_chat_settings", JSON.stringify(updated));
+    if (newSettings.defaultInputMode) {
+      setInputMode(newSettings.defaultInputMode);
+    }
+  };
+
+  const handle30sReminder = () => {
+    if (isSummaryView || isReviewMode || isIdleStopped) return;
+    const botMsg: ChatMessage = {
+      id: "msg-reminder-30-" + Date.now(),
+      sender: "bot",
+      text: ChatbotWorkflow.get30sReminder(),
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...messages, botMsg];
+    setMessages(updated);
+  };
+
+  const handle60sReminder = () => {
+    if (isSummaryView || isReviewMode || isIdleStopped) return;
+    const botMsg: ChatMessage = {
+      id: "msg-reminder-60-" + Date.now(),
+      sender: "bot",
+      text: ChatbotWorkflow.get60sReminder(),
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...messages, botMsg];
+    setMessages(updated);
+  };
+
+  const handleStopIdle = () => {
+    setIsIdleStopped(true);
+  };
+
+  const { resetTimers, clearTimers } = useIdleTimer({
+    on30sReminder: handle30sReminder,
+    on60sReminder: handle60sReminder,
+    onStop: handleStopIdle,
+    isActive: !isSummaryView && !isReviewMode && !isIdleStopped && messages.length > 0
+  });
+
+  const saveSessionProgress = async (updatedMessages: ChatMessage[]) => {
+    const userMessagesOnly = updatedMessages.filter(m => m.sender === "user");
+    await StoryService.saveSession({
+      id: "active",
+      status: "unfinished",
+      messages: userMessagesOnly,
+      createdAt: messages[0]?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const handleTranscriptionStart = () => {
+    clearTimers();
+  };
+
+  const handleTranscriptionEnd = (text: string) => {
+    if (text) {
+      setDraftText(text);
+      setIsReviewMode(true);
+    } else {
+      resetTimers();
+    }
+  };
+
+  const handleDeleteDraft = () => {
+    setDraftText("");
+    setIsReviewMode(false);
+    resetTimers();
+  };
+
+  const handleSendDraft = async (text: string) => {
+    const userMsg: ChatMessage = {
+      id: "msg-user-" + Date.now(),
+      sender: "user",
+      text: text,
+      createdAt: new Date().toISOString()
+    };
+
+    let updated = [...messages, userMsg];
+
+    const userMsgCount = updated.filter(m => m.sender === "user").length;
+    if (userMsgCount >= 50 && !hasRecommended) {
+      const recMsg: ChatMessage = {
+        id: "msg-rec-" + Date.now(),
+        sender: "bot",
+        text: ChatbotWorkflow.getRecommendation(),
+        createdAt: new Date().toISOString()
+      };
+      updated.push(recMsg);
+      setHasRecommended(true);
+    } else {
+      const encMsg: ChatMessage = {
+        id: "msg-enc-" + Date.now(),
+        sender: "bot",
+        text: ChatbotWorkflow.getEncouragement(),
+        createdAt: new Date().toISOString()
+      };
+      updated.push(encMsg);
+    }
+
+    setMessages(updated);
+    setIsReviewMode(false);
+    setDraftText("");
+    await saveSessionProgress(updated);
+    resetTimers();
+  };
+
+  const handleEndStory = async () => {
+    setIsSummaryView(true);
+    const active = await StoryService.getActiveSession();
+    if (active) {
+      await StoryService.saveSession({
+        ...active,
+        summary: "true"
+      });
+    }
+  };
+
+  const getSentences = () => {
+    return messages
+      .filter((m) => m.sender === "user")
+      .map((m) => m.text);
+  };
+
+  const handleUpdateSentence = async (index: number, newText: string) => {
+    const userMessages = messages.filter((m) => m.sender === "user");
+    const targetUserMsg = userMessages[index];
+    if (targetUserMsg) {
+      const updatedMessages = messages.map((m) =>
+        m.id === targetUserMsg.id ? { ...m, text: newText } : m
+      );
+      setMessages(updatedMessages);
+      await saveSessionProgress(updatedMessages);
+    }
+  };
+
+  const handleDeleteSentence = async (index: number) => {
+    const userMessages = messages.filter((m) => m.sender === "user");
+    const targetUserMsg = userMessages[index];
+    if (targetUserMsg) {
+      const updatedMessages = messages.filter((m) => m.id !== targetUserMsg.id);
+      setMessages(updatedMessages);
+      await saveSessionProgress(updatedMessages);
+    }
+  };
+
+  const handleCreateChunks = async () => {
+    const sentences = getSentences();
+    if (sentences.length === 0) return;
+
+    setIsGenerating(true);
+    const diaryContent = sentences.join("
+");
+
+    try {
+      const db = await getDb();
+      let userSettings = {
+        nativeLanguage: "vi",
+        learningLanguages: ["en"],
+        cefrLevel: "A2",
+        profileContext: "General topic"
+      };
+      
+      try {
+        const tx = db.transaction("settings", "readonly");
+        const store = tx.objectStore("settings");
+        const currentSettings = await new Promise<any>((resolve) => {
+          const req = store.get("user_profile");
+          req.onsuccess = () => resolve(req.result);
+        });
+        if (currentSettings) {
+          userSettings = {
+            nativeLanguage: currentSettings.nativeLanguage || "vi",
+            learningLanguages: currentSettings.learningLanguages || ["en"],
+            cefrLevel: currentSettings.cefrLevel || "A2",
+            profileContext: currentSettings.hobby || "General study"
+          };
+        }
+      } catch (e) {
+        console.warn("Could not load setting context, using defaults", e);
+      }
+
+      const apiResponse = await callGenerateChunks({
+        diaryContent,
+        nativeLanguage: userSettings.nativeLanguage,
+        targetLanguage: userSettings.learningLanguages[0] || "en",
+        cefrLevel: userSettings.cefrLevel,
+        profileContext: userSettings.profileContext,
+        existingSemanticGroups: []
+      });
+
+      const savedDiaryId = await addDiary({
+        title: "Story Chat Session - " + new Date().toLocaleDateString(),
+        content: diaryContent,
+        createdAt: new Date().toISOString()
+      });
+
+      const txMU = db.transaction(["meaningUnits", "chunks"], "readwrite");
+      const storeMU = txMU.objectStore("meaningUnits");
+      const storeChunks = txMU.objectStore("chunks");
+
+      for (const unit of apiResponse.semanticUnits) {
+        const muId = await new Promise<string>((resolve) => {
+          const req = storeMU.add({
+            diaryId: savedDiaryId,
+            nativeText: unit.nativeText,
+            englishPivot: unit.englishText,
+            order: unit.order
+          });
+          req.onsuccess = () => resolve(req.result as string);
+        });
+
+        const allChunks = [...unit.commonChunks, ...unit.personalizedChunks];
+        for (const rawChunk of allChunks) {
+          storeChunks.add({
+            meaningUnitId: muId,
+            language: userSettings.learningLanguages[0] || "en",
+            text: rawChunk.text,
+            meaning: rawChunk.english,
+            ipa: rawChunk.ipa,
+            romanization: rawChunk.romanization,
+            chunkType: unit.commonChunks.includes(rawChunk as any) ? "common" : "personalized",
+            stars: 0,
+            bestAccuracy: 0,
+            timesPracticed: 0,
+            lastPracticed: "",
+            totalReviews: 0,
+            averageRating: 0,
+            lastRating: 0,
+            lastReviewed: "",
+            sourceDiaryId: savedDiaryId,
+            sourceDiaryTitle: "Story Chat - " + new Date().toLocaleDateString()
+          });
+        }
+      }
+
+      await StoryService.clearActiveSession();
+      setMessages([]);
+      setIsSummaryView(false);
+      setDraftText("");
+      setIsReviewMode(false);
+      setIsGenerating(false);
+      setIsIdleStopped(false);
+      onNavigate("chunks");
+    } catch (err) {
+      console.error("Chunk creation failed", err);
+      alert("Tạo học liệu thất bại. Hãy thử lại để không làm mất câu chuyện.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (hasProfile === false) {
+    return (
+      <div className="device bg-white flex flex-col h-full shadow-lg rounded-3xl overflow-hidden max-w-[900px] mx-auto p-6">
+        <UserProfileSetup onComplete={handleProfileComplete} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="device bg-white flex flex-col h-full shadow-lg rounded-3xl overflow-hidden max-w-[900px] mx-auto">
+      <Header
+        inputMode={inputMode}
+        onInputModeChange={setInputMode}
+        onBack={onBack}
+        onToggleSettings={() => setShowSettings(!showSettings)}
+        showSettings={showSettings}
+        isSummaryView={isSummaryView}
+      />
+
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {isIdleStopped && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-6 text-center text-white">
+            <h3 className="text-xl font-bold mb-2">Phiên làm việc tạm dừng</h3>
+            <p className="text-sm mb-4">Bạn đã không hoạt động trong một khoảng thời gian khá lâu.</p>
+            <button
+              onClick={() => {
+                setIsIdleStopped(false);
+                resetTimers();
+              }}
+              className="px-6 py-2 bg-indigo-600 rounded-full hover:bg-indigo-700 transition"
+            >
+              Tiếp tục trò chuyện
+            </button>
+          </div>
+        )}
+
+        {isSummaryView ? (
+          <SummaryView
+            sentences={getSentences()}
+            onUpdateSentence={handleUpdateSentence}
+            onDeleteSentence={handleDeleteSentence}
+            onCreateChunks={handleCreateChunks}
+            isGenerating={isGenerating}
+          />
+        ) : (
+          <>
+            <Timeline messages={messages} />
+
+            {isReviewMode ? (
+              <DraftReview
+                draftText={draftText}
+                onDelete={handleDeleteDraft}
+                onSend={handleSendDraft}
+              />
+            ) : inputMode === "voice" ? (
+              <VoiceInput
+                onTranscriptionStart={handleTranscriptionStart}
+                onTranscriptionEnd={handleTranscriptionEnd}
+              />
+            ) : (
+              <TypingInput onSend={handleSendDraft} />
+            )}
+          </>
+        )}
+      </div>
+
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          onUpdateSettings={handleUpdateSettings}
+          onClose={() => setShowSettings(false)}
+          onEndStory={handleEndStory}
+        />
+      )}
+    </div>
+  );
+}
