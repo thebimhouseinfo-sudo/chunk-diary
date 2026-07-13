@@ -7,6 +7,7 @@ import TypingInput from "./components/TypingInput";
 import SummaryView from "./components/SummaryView";
 import SettingsModal from "./components/SettingsModal";
 import UserProfileSetup from "../profile/UserProfileSetup";
+import { MicPermissionModal } from "../MicPermissionModal";
 import { ChatMessage, ChatbotWorkflow } from "./workflow/chatbotWorkflow";
 import { StorySettings } from "./models/types";
 import { StoryService } from "./servises/storyService";
@@ -91,6 +92,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   
   // Onboarding Modal State
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Mic Permission Modal State
+  const [showMicPermissionModal, setShowMicPermissionModal] = useState(false);
+  const [micErrorType, setMicErrorType] = useState<'denied' | 'not_found' | 'other'>('denied');
 
   const [settings, setSettings] = useState<StorySettings>({
     theme: "system",
@@ -219,6 +224,27 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
     setIsSummaryView(false); // Ensure summary view is off after onboarding
     initSession();
   };
+
+  // Request mic permission handler - called after profile creation or when user first clicks mic
+  const requestMicPermission = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop the stream immediately after getting permission
+      stream.getTracks().forEach(track => track.stop());
+      // Permission granted, no need to show modal
+      setShowMicPermissionModal(false);
+    } catch (err: any) {
+      console.error("Mic permission error:", err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicErrorType('denied');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setMicErrorType('not_found');
+      } else {
+        setMicErrorType('other');
+      }
+      setShowMicPermissionModal(true);
+    }
+  }, []);
 
   const handleUpdateSettings = (newSettings: Partial<StorySettings>) => {
     const updated = { ...settings, ...newSettings };
@@ -499,19 +525,29 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   };
 
   return (
-    <div className="flex flex-col h-[78vh] sm:h-[80vh] md:h-[81vh] lg:h-[83vh] w-full bg-white rounded-[2rem] border border-slate-150/80 shadow-md overflow-hidden relative transition-all">
-      <UserProfileSetup show={showOnboarding} onCompleted={handleOnboardingCompleted} />
+    <div className="flex flex-col h-[78vh] sm:h-[80vh] md:h-[81vh] lg:h-[83vh] w-full bg-white rounded-[2rem] border border-slate-150/80 shadow-md overflow-hidden relative transition-all chat-container-fixed">
+      <UserProfileSetup show={showOnboarding} onCompleted={handleOnboardingCompleted} onRequestMicPermission={requestMicPermission} />
 
-      <Header
-        onBack={onBack}
-        onEnd={handleEndStory}
-        onOpenSettings={() => setShowSettings(true)}
-        isSummaryView={isSummaryView || !!generatedChunks}
-        isReviewMode={isReviewMode}
-        isEmpty={messages.filter((m) => m.sender === "user").length === 0}
-        inputMode={inputMode}
-        onToggleInputMode={() => setInputMode(prev => prev === "voice" ? "typing" : "voice")}
-      />
+      {/* Mic Permission Modal */}
+      {showMicPermissionModal && (
+        <MicPermissionModal 
+          onClose={() => setShowMicPermissionModal(false)} 
+          errorType={micErrorType} 
+        />
+      )}
+
+      <div className="chat-header-spacer">
+        <Header
+          onBack={onBack}
+          onEnd={handleEndStory}
+          onOpenSettings={() => setShowSettings(true)}
+          isSummaryView={isSummaryView || !!generatedChunks}
+          isReviewMode={isReviewMode}
+          isEmpty={messages.filter((m) => m.sender === "user").length === 0}
+          inputMode={inputMode}
+          onToggleInputMode={() => setInputMode(prev => prev === "voice" ? "typing" : "voice")}
+        />
+      </div>
 
       <div className="flex-1 overflow-hidden flex flex-col bg-slate-50/40 relative">
         {generatedChunks ? (
@@ -624,7 +660,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       </div>
 
       {!isSummaryView && !generatedChunks && (
-        <div className="p-4 sm:p-6 bg-white border-t border-slate-100 shrink-0">
+        <div className="mic-input-container p-2 sm:p-3 bg-white border-t border-slate-100 shrink-0">
           {isReviewMode ? (
             <DraftReview
               draftText={draftText}

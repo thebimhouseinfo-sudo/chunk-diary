@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=1, user-scalable=no" />
     <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48x48.png">
@@ -10,8 +10,34 @@
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#4F46E5" />
     <title>Language Chunk Diary</title>
-    <script type="module" crossorigin src="./assets/index-DNOi33me.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-bc-uWHUP.css">
+    <style>
+      /* Force consistent zoom level across all browsers */
+      html {
+        zoom: 0.9;
+      }
+      
+      /* Safari-specific: let Safari auto-handle zoom */
+      @supports (-webkit-touch-callout: none) {
+        html {
+          zoom: 1;
+        }
+      }
+      
+      /* Mobile optimizations */
+      @media (max-width: 768px) {
+        html {
+          zoom: 0.85;
+        }
+        
+        @supports (-webkit-touch-callout: none) {
+          html {
+            zoom: 1;
+          }
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-B2DZUSCj.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BwsOSJcg.css">
   </head>
   <body>
     <div id="root"></div>

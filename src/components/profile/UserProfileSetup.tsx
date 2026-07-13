@@ -1,14 +1,15 @@
 import React, { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Mic } from "lucide-react";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../db/userDb";
 
 interface UserProfileSetupProps {
   show: boolean;
   onCompleted: (settings: UserSettings) => void;
+  onRequestMicPermission?: () => void;
 }
 
-export default function UserProfileSetup({ show, onCompleted }: UserProfileSetupProps) {
+export default function UserProfileSetup({ show, onCompleted, onRequestMicPermission }: UserProfileSetupProps) {
   const [onboardForm, setOnboardForm] = useState({
     nickname: "",
     nativeLanguage: "Vietnamese",
@@ -45,6 +46,11 @@ export default function UserProfileSetup({ show, onCompleted }: UserProfileSetup
       localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
       
       onCompleted(updatedSettings);
+      
+      // Request mic permission after profile creation
+      if (onRequestMicPermission) {
+        onRequestMicPermission();
+      }
     } catch (err) {
       console.error("Lỗi khi lưu cấu hình người dùng:", err);
       alert("Đã xảy ra lỗi khi lưu thông tin. Vui lòng thử lại!");
