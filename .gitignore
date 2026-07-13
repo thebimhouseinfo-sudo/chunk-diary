@@ -1,7 +1,11 @@
 ```
+# Dependencies
+node_modules/
+
 # Build artifacts
 dist/
 build/
-*.js
-*.css
+
+# Vite cache
+node_modules/.vite/
 ```
