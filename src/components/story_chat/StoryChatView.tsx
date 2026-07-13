@@ -204,6 +204,8 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         const parsed = await getSettings();
         if (parsed && parsed.onboarded) {
           setHasProfile(true);
+          // Request mic permission immediately when Story Chat is opened
+          await requestMicPermission();
           await initSession();
         } else {
           setShowOnboarding(true);
@@ -222,6 +224,8 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
     setShowOnboarding(false);
     setHasProfile(true);
     setIsSummaryView(false); // Ensure summary view is off after onboarding
+    // Request mic permission immediately after onboarding completes
+    requestMicPermission();
     initSession();
   };
 
@@ -525,7 +529,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   };
 
   return (
-    <div className="flex flex-col h-[78vh] sm:h-[80vh] md:h-[81vh] lg:h-[83vh] w-full bg-white rounded-[2rem] border border-slate-150/80 shadow-md overflow-hidden relative transition-all chat-container-fixed">
+    <div className="story-chat-root bg-white rounded-[2rem] border border-slate-150/80 shadow-md overflow-hidden relative transition-all">
       <UserProfileSetup show={showOnboarding} onCompleted={handleOnboardingCompleted} onRequestMicPermission={requestMicPermission} />
 
       {/* Mic Permission Modal */}
@@ -536,7 +540,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         />
       )}
 
-      <div className="chat-header-spacer">
+      <div className="story-chat-header">
         <Header
           onBack={onBack}
           onEnd={handleEndStory}
@@ -549,9 +553,9 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         />
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col bg-slate-50/40 relative">
+      <div className="story-chat-messages bg-slate-50/40 relative">
         {generatedChunks ? (
-          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 max-w-2xl w-full mx-auto animate-pageFadeIn text-left">
+          <div className="p-6 sm:p-8 space-y-6 max-w-2xl w-full mx-auto animate-pageFadeIn text-left">
             {/* Celebration Hero Header Card */}
             <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-150/80 shadow-xs space-y-4">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-vibrant-mint/20 text-vibrant-indigo rounded-full text-xs font-black uppercase tracking-wider">
@@ -660,7 +664,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       </div>
 
       {!isSummaryView && !generatedChunks && (
-        <div className="mic-input-container p-2 sm:p-3 bg-white border-t border-slate-100 shrink-0">
+        <div className="story-chat-footer mic-input-container p-2 sm:p-3 bg-white border-t border-slate-100 shrink-0">
           {isReviewMode ? (
             <DraftReview
               draftText={draftText}
