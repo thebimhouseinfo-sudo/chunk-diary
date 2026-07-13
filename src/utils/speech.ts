@@ -43,13 +43,46 @@ function getSimilarity(s1: string, s2: string): number {
   return (longerLength - getEditDistance(s1, s2)) / longerLength;
 }
 
+// Punctuation stripped for scoring purposes (ASCII + common CJK full-width marks)
+const PUNCTUATION_REGEX = /[.,\/#!$%\^&\*;:{}=\-_`~()?"'·。，！？；：、""''（）【】]/g;
+
 // Clean text for speech comparison
 export function cleanTextForSpeech(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'·]|japanese|chinese|english/g, "")
+    .replace(PUNCTUATION_REGEX, "")
+    .replace(/japanese|chinese|english/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Fold diacritics/accents so STT results missing accents aren't penalized.
+// Safe for all languages: languages without diacritics are unaffected.
+function foldDiacritics(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+// Similarity between two already-cleaned tokens, diacritic-insensitive.
+function tokenSimilarity(a: string, b: string): number {
+  const fa = foldDiacritics(a);
+  const fb = foldDiacritics(b);
+  if (fa === fb) return 1.0;
+  return getSimilarity(fa, fb);
+}
+
+// Languages written without spaces between words: compare character by character.
+function isNoSpaceScript(language: string): boolean {
+  const l = language.toLowerCase();
+  return l.includes("chinese") || l.includes("japanese") || l === "zh" || l === "ja";
+}
+
+// Split RAW (un-cleaned) text into display tokens, preserving original casing/punctuation.
+function tokenizeRaw(text: string, noSpace: boolean): string[] {
+  return noSpace ? text.split("") : text.split(/\s+/).filter(Boolean);
 }
 
 export interface WordScore {
@@ -64,101 +97,74 @@ export interface PronunciationResult {
   spokenText: string;
 }
 
-// Evaluate pronunciation accuracy and map to stars
+// Unified pronunciation evaluator, shared across ALL languages.
+// Only the tokenization strategy (word-based vs character-based) differs by language;
+// the matching, scoring, and star-mapping logic is identical for every language.
 export function evaluatePronunciation(targetText: string, spokenText: string, language: string): PronunciationResult {
-  const cleanTarget = cleanTextForSpeech(targetText);
-  const cleanSpoken = cleanTextForSpeech(spokenText);
+  const noSpace = isNoSpaceScript(language);
 
-  const langLower = language.toLowerCase();
-  const isNoSpaceLang = langLower.includes("chinese") || langLower.includes("japanese") || langLower === "zh" || langLower === "ja";
+  const rawTargetTokens = tokenizeRaw(targetText, noSpace);
+  const cleanSpokenTokens = noSpace
+    ? cleanTextForSpeech(spokenText).replace(/\s/g, "").split("")
+    : cleanTextForSpeech(spokenText).split(/\s+/).filter(Boolean);
 
-  let wordFeedback: WordScore[] = [];
-  let accuracy = 0;
+  const usedSpokenIndices = new Set<number>();
+  let totalScore = 0;
+  let contentTokenCount = 0;
 
-  if (isNoSpaceLang) {
-    // Character by character comparison for Chinese/Japanese
-    const targetChars = targetText.split("");
-    const cleanSpokenChars = cleanSpoken.replace(/\s/g, "").split("");
-    
-    let matchedCount = 0;
-    wordFeedback = targetChars.map(char => {
-      if (/[.,\/#!$%\^&\*;:{}=\-_`~()?"'·\s]/.test(char)) {
-        return { word: char, status: "good" }; // Ignore punctuation/spaces
+  const wordFeedback: WordScore[] = rawTargetTokens.map(rawToken => {
+    const cleanToken = cleanTextForSpeech(rawToken);
+    if (!cleanToken) {
+      return { word: rawToken, status: "good" }; // punctuation-only token, ignore
+    }
+    contentTokenCount++;
+
+    let bestSim = 0;
+    let bestIndex = -1;
+    for (let i = 0; i < cleanSpokenTokens.length; i++) {
+      if (usedSpokenIndices.has(i)) continue;
+      const sim = tokenSimilarity(cleanToken, cleanSpokenTokens[i]);
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestIndex = i;
       }
-      
-      const charClean = char.toLowerCase();
-      // See if character exists in spoken chars
-      const index = cleanSpokenChars.indexOf(charClean);
-      if (index !== -1) {
-        cleanSpokenChars.splice(index, 1); // Consume character
-        matchedCount++;
-        return { word: char, status: "good" };
+    }
+
+    let status: "good" | "improve" | "wrong" = "wrong";
+    let score = 0;
+
+    if (bestIndex !== -1 && bestSim > 0.4) {
+      usedSpokenIndices.add(bestIndex);
+      if (bestSim >= 0.8) {
+        status = "good";
+        score = 1.0;
+      } else if (bestSim >= 0.5) {
+        status = "improve";
+        score = 0.6;
       } else {
-        return { word: char, status: "wrong" };
+        score = 0.2;
       }
-    });
+    }
 
-    const totalActualChars = targetChars.filter(c => !/[.,\/#!$%\^&\*;:{}=\-_`~()?"'·\s]/.test(c)).length;
-    accuracy = totalActualChars > 0 ? Math.round((matchedCount / totalActualChars) * 100) : 100;
+    totalScore += score;
+    return { word: rawToken, status };
+  });
 
-  } else {
-    // Word-by-word comparison for space-separated languages
-    const targetWords = targetText.split(/\s+/);
-    const spokenWords = cleanSpoken.split(/\s+/).filter(w => w.length > 0);
+  const tokenAccuracy = contentTokenCount > 0 ? Math.round((totalScore / contentTokenCount) * 100) : 100;
 
-    let totalScore = 0;
-    const usedSpokenIndices = new Set<number>();
+  // Double-check overall text similarity to prevent false-positives, same as before.
+  const overallTargetClean = noSpace
+    ? cleanTextForSpeech(targetText).replace(/\s/g, "")
+    : cleanTextForSpeech(targetText);
+  const overallSpokenClean = noSpace
+    ? cleanTextForSpeech(spokenText).replace(/\s/g, "")
+    : cleanTextForSpeech(spokenText);
 
-    wordFeedback = targetWords.map(rawWord => {
-      const cleanWord = cleanTextForSpeech(rawWord);
-      if (!cleanWord) {
-        return { word: rawWord, status: "good" }; // spacing/punctuation only
-      }
-
-      // Find the best matching word in spokenWords that hasn't been used yet
-      let bestSim = 0;
-      let bestIndex = -1;
-
-      for (let i = 0; i < spokenWords.length; i++) {
-        if (usedSpokenIndices.has(i)) continue;
-        const sim = getSimilarity(cleanWord, spokenWords[i]);
-        if (sim > bestSim) {
-          bestSim = sim;
-          bestIndex = i;
-        }
-      }
-
-      let status: "good" | "improve" | "wrong" = "wrong";
-      let score = 0;
-
-      if (bestIndex !== -1 && bestSim > 0.4) {
-        usedSpokenIndices.add(bestIndex);
-        if (bestSim >= 0.8) {
-          status = "good";
-          score = 1.0;
-        } else if (bestSim >= 0.5) {
-          status = "improve";
-          score = 0.6;
-        } else {
-          status = "wrong";
-          score = 0.2;
-        }
-      }
-
-      totalScore += score;
-      return { word: rawWord, status };
-    });
-
-    const contentWordsCount = targetWords.filter(w => cleanTextForSpeech(w).length > 0).length;
-    accuracy = contentWordsCount > 0 ? Math.round((totalScore / contentWordsCount) * 100) : 100;
-  }
-
-  // Double check overall text similarity to prevent false-positives
-  const overallSimilarity = getSimilarity(cleanTarget, cleanSpoken);
+  const overallSimilarity = getSimilarity(foldDiacritics(overallTargetClean), foldDiacritics(overallSpokenClean));
   const matchedAccuracy = Math.round(overallSimilarity * 100);
-  
-  // Mix word score with overall sequence match to handle missing word penalties
-  accuracy = Math.min(100, Math.max(0, Math.round(accuracy * 0.7 + matchedAccuracy * 0.3)));
+
+  // Mix token score with overall sequence match to handle missing/extra token penalties.
+  const accuracy = Math.min(100, Math.max(0, Math.round(tokenAccuracy * 0.7 + matchedAccuracy * 0.3)));
 
   // Stars mapping:
   // 0-39% = 1 star
@@ -179,7 +185,6 @@ export function evaluatePronunciation(targetText: string, spokenText: string, la
     spokenText: spokenText || "(Không nghe thấy gì / No speech heard)"
   };
 }
-
 // Browser Web Speech Recognition service wrapper
 export class SpeechService {
   private recognition: any = null;
