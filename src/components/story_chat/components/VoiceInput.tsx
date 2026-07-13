@@ -14,27 +14,81 @@ export default function VoiceInput({
 }: VoiceInputProps) {
   const [isHolding, setIsHolding] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
+  const [isMicReady, setIsMicReady] = useState(false);
   const recognitionRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Giả lập sóng âm sinh động khi giữ mic nói
+  // Initialize microphone and audio analysis on mount
   useEffect(() => {
-    if (isHolding) {
-      intervalRef.current = setInterval(() => {
-        setAmplitude(Array.from({ length: 8 }, () => Math.floor(Math.random() * 45) + 10));
-      }, 100);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      setAmplitude([10, 10, 10, 10, 10]);
-    }
+    const initMic = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        });
+        streamRef.current = stream;
+        
+        // Set up audio context for real-time amplitude detection
+        audioContextRef.current = new AudioContext();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 64;
+        sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+        sourceRef.current.connect(analyserRef.current);
+        
+        setIsMicReady(true);
+        
+        // Start monitoring amplitude
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        
+        const updateAmplitude = () => {
+          if (analyserRef.current && isHolding) {
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const values = Array.from(dataArray.slice(0, 8)).map(v => Math.max(10, v * 0.6));
+            setAmplitude(values);
+          } else if (!isHolding) {
+            setAmplitude([10, 10, 10, 10, 10]);
+          }
+          requestAnimationFrame(updateAmplitude);
+        };
+        
+        updateAmplitude();
+        
+      } catch (err) {
+        console.error("Mic initialization failed:", err);
+        setIsMicReady(false);
+      }
+    };
+    
+    initMic();
+    
     return () => {
+      // Cleanup audio resources
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isHolding]);
+  }, []);
 
   const startListening = async () => {
     setIsHolding(true);
     onTranscriptionStart();
+
+    // Wait for mic to be ready before starting recognition
+    if (!isMicReady) {
+      console.log("Waiting for mic to be ready...");
+      return;
+    }
 
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -73,31 +127,17 @@ export default function VoiceInput({
       };
 
       recognitionRef.current = recognition;
-      try {
-        // Request audio permission first with higher sensitivity settings
-        await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        });
-        
-        // Small delay to ensure mic is ready
-        setTimeout(() => {
-          try {
-            recognition.start();
-          } catch (e) {
-            console.error("Failed to start recognition:", e);
-            setIsHolding(false);
-            onTranscriptionEnd("");
-          }
-        }, 100);
-      } catch (err) {
-        console.error("Mic permission denied", err);
-        setIsHolding(false);
-        onTranscriptionEnd("");
-      }
+      
+      // Small delay to ensure mic is ready
+      setTimeout(() => {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error("Failed to start recognition:", e);
+          setIsHolding(false);
+          onTranscriptionEnd("");
+        }
+      }, 100);
     } else {
       // Mockup transcription fallback
       setTimeout(() => {
