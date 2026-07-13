@@ -67,3 +67,23 @@ body {
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Fix header-chat container spacing to prevent sliding */
+.chat-container-fixed {
+  position: relative;
+}
+
+.chat-header-spacer {
+  flex-shrink: 0;
+}
+
+/* Reduce whitespace above mic button */
+.mic-input-container {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.mic-waveform-container {
+  margin-bottom: 0.25rem !important;
+  height: 1rem !important;
+}

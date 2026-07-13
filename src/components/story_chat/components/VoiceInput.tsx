@@ -74,9 +74,25 @@ export default function VoiceInput({
 
       recognitionRef.current = recognition;
       try {
-        // iOS Safari: request audio permission and start recognition
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        recognition.start();
+        // Request audio permission first with higher sensitivity settings
+        await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        });
+        
+        // Small delay to ensure mic is ready
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error("Failed to start recognition:", e);
+            setIsHolding(false);
+            onTranscriptionEnd("");
+          }
+        }, 100);
       } catch (err) {
         console.error("Mic permission denied", err);
         setIsHolding(false);
@@ -99,16 +115,16 @@ export default function VoiceInput({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center py-3 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
+    <div className="mic-input-container flex flex-col items-center justify-center py-1 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
       {/* Sóng âm sinh động */}
-      <div className="h-12 flex items-center justify-center gap-1.5 mb-2 w-full">
+      <div className="mic-waveform-container h-8 flex items-center justify-center gap-1.5 mb-1 w-full">
         {isHolding && (
           <div className="flex items-center gap-1">
-            <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={14} />
+            <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={12} />
             {amplitude.map((h, i) => (
               <span
                 key={i}
-                style={{ height: `${h * 0.7}px` }}
+                style={{ height: `${h * 0.6}px` }}
                 className="w-1 bg-gradient-to-t from-vibrant-coral to-vibrant-indigo rounded-full transition-all duration-100"
               ></span>
             ))}
@@ -145,7 +161,7 @@ export default function VoiceInput({
         <div className="w-10 h-10"></div>
       </div>
 
-      <div className="text-xs text-slate-500 mt-3 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
+      <div className="text-xs text-slate-500 mt-2 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
         {isHolding ? (
           <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
         ) : (
