@@ -25,12 +25,43 @@
   --color-brand-900: #0c20c4;
 }
 
+/* Responsive root font sizing for Safari-like scaling */
+html {
+  /* Desktop default */
+  font-size: 16px;
+}
+
+/* Mobile: slightly smaller base font (approximately 8-12% smaller) */
+@media (max-width: 768px) {
+  html {
+    font-size: 14.5px;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 375px) {
+  html {
+    font-size: 13.5px;
+  }
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--color-vibrant-bg);
   color: #1e293b;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent overscroll bounce on mobile */
+  overscroll-behavior: none;
+  /* Prevent text selection on UI elements */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection in content areas */
+p, h1, h2, h3, h4, h5, h6, span, li {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 @keyframes pageFadeIn {
@@ -63,18 +94,50 @@ body {
   background: #cbd5e1;
 }
 
-/* Safe areas for mobile */
+/* Safe areas for mobile using env() */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
 
-/* Fix header-chat container spacing to prevent sliding */
-.chat-container-fixed {
+/* Story Chat fixed layout using dynamic viewport height */
+.story-chat-root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  height: 100svh;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
   position: relative;
 }
 
-.chat-header-spacer {
+/* Header stays fixed at top */
+.story-chat-header {
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Message list scrolls independently */
+.story-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Footer/Mic input fixed at bottom */
+.story-chat-footer {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Reduce whitespace above mic button */
@@ -86,4 +149,20 @@ body {
 .mic-waveform-container {
   margin-bottom: 0.25rem !important;
   height: 1rem !important;
+}
+
+/* Prevent layout shifts from browser UI */
+@media (max-width: 768px) {
+  /* Ensure full viewport usage without page scrolling */
+  body, html {
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  /* Main app container should fill viewport */
+  #root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
 }

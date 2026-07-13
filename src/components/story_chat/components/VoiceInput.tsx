@@ -15,6 +15,7 @@ export default function VoiceInput({
   const [isHolding, setIsHolding] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
   const [isMicReady, setIsMicReady] = useState(false);
+  const [isRecognitionStarted, setIsRecognitionStarted] = useState(false);
   const recognitionRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -48,11 +49,11 @@ export default function VoiceInput({
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         
         const updateAmplitude = () => {
-          if (analyserRef.current && isHolding) {
+          if (analyserRef.current && isHolding && isRecognitionStarted) {
             analyserRef.current.getByteFrequencyData(dataArray);
             const values = Array.from(dataArray.slice(0, 8)).map(v => Math.max(10, v * 0.6));
             setAmplitude(values);
-          } else if (!isHolding) {
+          } else if (!isHolding || !isRecognitionStarted) {
             setAmplitude([10, 10, 10, 10, 10]);
           }
           requestAnimationFrame(updateAmplitude);
@@ -124,20 +125,45 @@ export default function VoiceInput({
 
       recognition.onend = () => {
         setIsHolding(false);
+        setIsRecognitionStarted(false);
+      };
+
+      // Wait for actual microphone activation before showing waveform
+      // Use onstart + onaudiostart/onsoundstart combination for best cross-browser support
+      recognition.onstart = () => {
+        console.log("SpeechRecognition started");
+        setIsRecognitionStarted(true);
+      };
+
+      // Chrome/Edge: onaudiostart fires when audio is actually being captured
+      recognition.onaudiostart = () => {
+        console.log("Audio capture started");
+        setIsRecognitionStarted(true);
+      };
+
+      // Firefox: onsoundstart fires when sound is detected
+      recognition.onsoundstart = () => {
+        console.log("Sound detected");
+        setIsRecognitionStarted(true);
+      };
+
+      // Safari: onspeechstart fires when speech is detected
+      recognition.onspeechstart = () => {
+        console.log("Speech detected");
+        setIsRecognitionStarted(true);
       };
 
       recognitionRef.current = recognition;
       
-      // Small delay to ensure mic is ready
-      setTimeout(() => {
-        try {
-          recognition.start();
-        } catch (e) {
-          console.error("Failed to start recognition:", e);
-          setIsHolding(false);
-          onTranscriptionEnd("");
-        }
-      }, 100);
+      // Start recognition - waveform will only show after onstart/onaudiostart fires
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error("Failed to start recognition:", e);
+        setIsHolding(false);
+        setIsRecognitionStarted(false);
+        onTranscriptionEnd("");
+      }
     } else {
       // Mockup transcription fallback
       setTimeout(() => {
@@ -152,13 +178,14 @@ export default function VoiceInput({
       recognitionRef.current.stop();
     }
     setIsHolding(false);
+    setIsRecognitionStarted(false);
   };
 
   return (
     <div className="mic-input-container flex flex-col items-center justify-center py-1 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
-      {/* Sóng âm sinh động */}
+      {/* Sóng âm sinh động - only shows when mic is actually active */}
       <div className="mic-waveform-container h-8 flex items-center justify-center gap-1.5 mb-1 w-full">
-        {isHolding && (
+        {isHolding && isRecognitionStarted && (
           <div className="flex items-center gap-1">
             <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={12} />
             {amplitude.map((h, i) => (
@@ -203,7 +230,11 @@ export default function VoiceInput({
 
       <div className="text-xs text-slate-500 mt-2 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
         {isHolding ? (
-          <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
+          isRecognitionStarted ? (
+            <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
+          ) : (
+            <span className="text-slate-400 animate-pulse">Đang khởi tạo micro...</span>
+          )
         ) : (
           <span className="text-slate-400 flex items-center justify-center gap-1.5 uppercase tracking-wide">
             <Sparkles size={12} className="text-vibrant-indigo shrink-0" /> Nhấn giữ để kể câu chuyện của bạn bằng tiếng Việt
