@@ -25,24 +25,14 @@
   --color-brand-900: #0c20c4;
 }
 
-/* Responsive root font sizing for Safari-like scaling */
+/* Responsive root font sizing using clamp for smooth scaling */
 html {
-  /* Desktop default */
-  font-size: 16px;
-}
-
-/* Mobile: slightly smaller base font (approximately 8-12% smaller) */
-@media (max-width: 768px) {
-  html {
-    font-size: 14.5px;
-  }
-}
-
-/* Small mobile devices */
-@media (max-width: 375px) {
-  html {
-    font-size: 13.5px;
-  }
+  /* Smooth responsive font sizing:
+     - Minimum: 13.5px (small mobile)
+     - Preferred: scales with viewport width
+     - Maximum: 16px (desktop)
+  */
+  font-size: clamp(13.5px, 0.85rem + 0.2vw, 16px);
 }
 
 body {
