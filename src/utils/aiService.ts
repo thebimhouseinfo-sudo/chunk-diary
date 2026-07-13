@@ -32,7 +32,7 @@ export function getBrowserFingerprint(): string {
   return `FP-${Math.abs(hash)}-${localId}`;
 }
 
-const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbzv_dfCx3jSfNEcp8qxrlFR52j1b3yFQrJbAFK7u_CaavzpZuRCShKW_K-puT8jc5o/exec";
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwpyzwd0bWlj2JGrCcaQJms-CgVzGOd32ypzkCl-oZhB6CC0Q0HVNMC-9F7KnNiNRZx/exec";
 
 export interface AIServiceResponse {
   englishNarrative: string;
