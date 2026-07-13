@@ -32,7 +32,7 @@ export function getBrowserFingerprint(): string {
   return `FP-${Math.abs(hash)}-${localId}`;
 }
 
-const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwylOXj5B1krEEQuKZle-TM2F2adJjbC_ZM1ZinSI0OaN1F6-E99oi_Gt-raTuG51kY/exec";
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbzv_dfCx3jSfNEcp8qxrlFR52j1b3yFQrJbAFK7u_CaavzpZuRCShKW_K-puT8jc5o/exec";
 
 export interface AIServiceResponse {
   englishNarrative: string;
@@ -43,6 +43,7 @@ export interface AIServiceResponse {
     commonChunks: Array<{
       english: string;
       text: string;
+      ipa: string;
       romanization: string;
       semanticGroupId: string;
       proposedCanonicalMeaning?: string;
@@ -50,6 +51,7 @@ export interface AIServiceResponse {
     personalizedChunks: Array<{
       english: string;
       text: string;
+      ipa: string;
       romanization: string;
       semanticGroupId: string;
       proposedCanonicalMeaning?: string;
