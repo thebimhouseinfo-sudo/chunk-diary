@@ -333,7 +333,7 @@ export default function MyChunksView({ onStartPractice }: MyChunksViewProps) {
                           </div>
                           {(chunk.ipa || chunk.romanization) && (
                             <div className="space-y-0.5 bg-white/50 p-2 rounded-xl border border-slate-100 text-[9px] font-mono">
-                              {chunk.ipa && <div className="text-slate-500">IPA: <span className="text-vibrant-indigo font-bold">{chunk.ipa}</span></div>}
+                              {chunk.ipa && <div className="text-slate-500">IPA: <span className="text-vibrant-indigo font-bold" style={{ fontFamily: "var(--font-ipa)" }}>{chunk.ipa}</span></div>}
                               {chunk.romanization && <div className="text-vibrant-coral font-bold">Roman: <span className="font-medium">{chunk.romanization}</span></div>}
                             </div>
                           )}
