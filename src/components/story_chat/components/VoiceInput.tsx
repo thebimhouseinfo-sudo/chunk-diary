@@ -45,6 +45,9 @@ export default function VoiceInput({
       recognition.interimResults = false;
       recognition.lang = "vi-VN";
 
+      // iOS Safari specific: prevent the recognition from ending prematurely
+      recognition.maxAlternatives = 1;
+
       recognition.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
         if (text && text.trim()) {
@@ -56,6 +59,12 @@ export default function VoiceInput({
 
       recognition.onerror = (event: any) => {
         console.error("Voice input recognition error:", event.error);
+        // iOS Safari: handle specific errors gracefully
+        if (event.error === 'no-speech') {
+          console.log("No speech detected, waiting for retry");
+        } else if (event.error === 'not-allowed') {
+          console.log("Microphone permission not allowed");
+        }
         onTranscriptionEnd("");
       };
 
@@ -65,6 +74,7 @@ export default function VoiceInput({
 
       recognitionRef.current = recognition;
       try {
+        // iOS Safari: request audio permission and start recognition
         await navigator.mediaDevices.getUserMedia({ audio: true });
         recognition.start();
       } catch (err) {
@@ -89,17 +99,17 @@ export default function VoiceInput({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center py-6 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
+    <div className="flex flex-col items-center justify-center py-3 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
       {/* Sóng âm sinh động */}
-      <div className="h-16 flex items-center justify-center gap-1.5 mb-4 w-full">
+      <div className="h-12 flex items-center justify-center gap-1.5 mb-2 w-full">
         {isHolding && (
           <div className="flex items-center gap-1">
-            <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={16} />
+            <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={14} />
             {amplitude.map((h, i) => (
               <span
                 key={i}
-                style={{ height: `${h}px` }}
-                className="w-1.5 bg-gradient-to-t from-vibrant-coral to-vibrant-indigo rounded-full transition-all duration-100"
+                style={{ height: `${h * 0.7}px` }}
+                className="w-1 bg-gradient-to-t from-vibrant-coral to-vibrant-indigo rounded-full transition-all duration-100"
               ></span>
             ))}
           </div>
@@ -110,37 +120,37 @@ export default function VoiceInput({
         {/* Nút chuyển chế độ gõ phím */}
         <button
           onClick={onSwitchMode}
-          className="p-3.5 bg-white border border-slate-100 rounded-2xl text-slate-500 hover:text-slate-800 shadow-sm hover:shadow active:scale-95 transition-all cursor-pointer"
+          className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-500 hover:text-slate-800 shadow-sm hover:shadow active:scale-95 transition-all cursor-pointer"
           title="Chuyển sang nhập văn bản"
         >
-          <Keyboard size={20} />
+          <Keyboard size={18} />
         </button>
 
-        {/* Nút Mic chính cỡ lớn */}
+        {/* Nút Mic chính cỡ lớn - optimized for mobile */}
         <button
           onMouseDown={startListening}
           onMouseUp={stopListening}
           onTouchStart={startListening}
           onTouchEnd={stopListening}
-          className={`w-24 h-24 bg-gradient-to-tr from-vibrant-indigo to-vibrant-indigo/90 text-white rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer select-none active:scale-90 ${
+          className={`w-18 h-18 sm:w-24 sm:h-24 bg-gradient-to-tr from-vibrant-indigo to-vibrant-indigo/90 text-white rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer select-none active:scale-90 ${
             isHolding
-              ? "ring-8 ring-vibrant-indigo/25 scale-105 shadow-vibrant-indigo/20"
+              ? "ring-6 ring-vibrant-indigo/25 scale-105 shadow-vibrant-indigo/20"
               : "hover:scale-102 shadow-vibrant-indigo/10"
           }`}
         >
-          <Mic size={36} className={`${isHolding ? "text-vibrant-mint scale-110" : "text-white"}`} />
+          <Mic size={28} className={`${isHolding ? "text-vibrant-mint scale-110" : "text-white"}`} />
         </button>
 
         {/* Placeholder giữ thăng bằng */}
-        <div className="w-12 h-12"></div>
+        <div className="w-10 h-10"></div>
       </div>
 
-      <div className="text-xs text-slate-500 mt-5 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
+      <div className="text-xs text-slate-500 mt-3 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
         {isHolding ? (
           <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
         ) : (
           <span className="text-slate-400 flex items-center justify-center gap-1.5 uppercase tracking-wide">
-            <Sparkles size={14} className="text-vibrant-indigo shrink-0" /> Nhấn giữ để kể câu chuyện của bạn bằng tiếng Việt
+            <Sparkles size={12} className="text-vibrant-indigo shrink-0" /> Nhấn giữ để kể câu chuyện của bạn bằng tiếng Việt
           </span>
         )}
       </div>
