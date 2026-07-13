@@ -11,6 +11,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { UserSettings } from "../types";
+import { isIOS } from "../utils/platform";
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<UserSettings>({

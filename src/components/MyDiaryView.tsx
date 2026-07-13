@@ -28,6 +28,7 @@ import {
 import { Diary, MeaningUnit, Chunk, UserSettings } from "../types";
 import { speakText } from "../utils/tts";
 import { callGenerateChunks } from "../utils/aiService";
+import { isIOS } from "../utils/platform";
 
 interface MyDiaryViewProps {
   onStartPractice: (chunks: Chunk[]) => void;

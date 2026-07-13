@@ -1,3 +1,1 @@
-```ts
-
-```
+Nothing needs to be added to the .gitignore file based on the provided changes. The listed files are all TypeScript source files (.ts, .tsx) which should not be ignored according to the rules.
