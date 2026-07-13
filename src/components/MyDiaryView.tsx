@@ -234,7 +234,7 @@ export default function MyDiaryView({ onStartPractice, onNavigate }: MyDiaryView
             language: targetLanguage,
             text: chunk.text,
             meaning: unit.nativeText,
-            ipa: "",
+            ipa: chunk.ipa || "",
             romanization: chunk.romanization || "",
             chunkType: chunk.type,
             stars: 0,
