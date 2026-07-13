@@ -26,6 +26,18 @@ const getLangCode = (lang: string) => {
   return "en-US"; // fallback
 };
 
+const isLatinScript = (lang: string): boolean => {
+  const l = lang.toLowerCase();
+  // Non-Latin languages (keep romanization for these)
+  if (l.includes("korean") || l.includes("japanese") || l.includes("chinese") || 
+      l.includes("russian") || l.includes("arabic") || l.includes("thai") ||
+      l.includes("hindi") || l.includes("greek") || l.includes("hebrew")) {
+    return false;
+  }
+  // Default to Latin script for other languages (English, French, Spanish, German, etc.)
+  return true;
+};
+
 export default function PracticeGameView({ practiceList, onFinish }: PracticeGameViewProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
@@ -228,7 +240,13 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
               </span>
             ))}
           </h2>
-          {currentChunk.romanization && (
+          {/* Display IPA for Latin-script languages, romanization for non-Latin */}
+          {currentChunk.ipa && isLatinScript(currentChunk.language) && (
+            <p className="text-lg font-mono font-bold text-vibrant-indigo opacity-80 mt-3">
+              /{currentChunk.ipa}/
+            </p>
+          )}
+          {currentChunk.romanization && !isLatinScript(currentChunk.language) && (
             <p className="text-lg font-mono font-bold text-vibrant-indigo opacity-80 mt-3">
               /{currentChunk.romanization}/
             </p>
