@@ -119,3 +119,15 @@ export function getActiveScale(originalScaleClass: string = 'active:scale-95'): 
   }
   return originalScaleClass;
 }
+
+/**
+ * Gắn class "browser-safari" lên thẻ <html> nếu là Safari, để index.css
+ * có thể áp riêng 1 font-size cố định (điểm neo) cho Safari tự scale,
+ * khác với clamp() theo vw dùng cho các browser khác.
+ * Gọi hàm này 1 lần duy nhất, càng sớm càng tốt (trước khi React render).
+ */
+export function applyBrowserClassToHtml(): void {
+  if (typeof document === 'undefined') return;
+  const { isSafari } = getBrowserInfo();
+  document.documentElement.classList.toggle('browser-safari', isSafari);
+}
