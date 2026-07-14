@@ -27,12 +27,25 @@
 
 /* Responsive root font sizing using clamp for smooth scaling */
 html {
-  /* Smooth responsive font sizing:
+  /* Smooth responsive font sizing (áp dụng cho Chrome/Edge/Firefox...):
      - Minimum: 13.5px (small mobile)
      - Preferred: scales with viewport width
      - Maximum: 16px (desktop)
   */
   font-size: clamp(13.5px, 0.85rem + 0.2vw, 16px);
+  /* Chuẩn hoá hành vi auto-adjust cỡ chữ mặc định của WebKit trên các browser
+     không phải Safari, tránh cộng dồn 2 lớp scale khác nhau */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Safari (desktop + iOS): dùng font-size CỐ ĐỊNH làm điểm neo, để Safari tự lo
+   việc scale theo Dynamic Type / pinch-zoom / cỡ chữ hệ thống của người dùng —
+   không dùng clamp() theo vw vì Safari cần 1 mốc cố định để nhân tỉ lệ đúng. */
+html.browser-safari {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {

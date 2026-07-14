@@ -75,13 +75,29 @@ export default function VoiceInput({
     setRecognitionState('initializing');
     onTranscriptionStart();
 
-    // Wait for mic to be ready before starting recognition
+    // Nếu lần "làm nóng" mic lúc mount chưa thành công (rất hay gặp trên iOS Safari
+    // vì getUserMedia gọi ngoài user-gesture sẽ bị chặn), thử xin quyền lại NGAY TẠI ĐÂY —
+    // vì đây đang là bên trong 1 user-gesture hợp lệ (pointerdown), khác với lúc mount.
     if (!isMicReady) {
-      console.log("Waiting for mic to be ready...");
-      pointerActiveRef.current = false;
-      setIsHolding(false);
-      setRecognitionState('idle');
-      return;
+      console.log("Mic not ready yet, requesting permission inside user gesture...");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        stream.getTracks().forEach(track => track.stop());
+        setIsMicReady(true);
+      } catch (err) {
+        console.error("Mic permission request failed inside user gesture:", err);
+        pointerActiveRef.current = false;
+        setIsHolding(false);
+        setRecognitionState('idle');
+        onTranscriptionEnd("");
+        return;
+      }
     }
 
     const SpeechRecognition =
@@ -170,20 +186,20 @@ export default function VoiceInput({
 
       recognitionRef.current = recognition;
       
-      // Start recognition with a small delay to ensure all handlers are set up
+      // Gọi recognition.start() ngay lập tức, KHÔNG delay, để không mất các từ đầu
+      // câu nói của user (mic đã được "làm nóng" từ trước nên không cần chờ thêm).
       try {
-        setTimeout(() => {
-          recognition.start();
-          console.log("SpeechRecognition.start() called");
-        }, 50);
+        recognition.start();
+        console.log("SpeechRecognition.start() called");
         
-        // Fallback timeout: if no event fires within 500ms, show waveform anyway
+        // Fallback timeout: nếu không browser nào bắn event nào trong 300ms,
+        // vẫn phải hiện waveform, không được để waveform "mất" luôn.
         waveformTimeoutRef.current = setTimeout(() => {
           if (!waveformActivated && isHolding) {
             console.log("Waveform timeout fallback - showing waveform");
             activateWaveform();
           }
-        }, 500);
+        }, 300);
         
       } catch (e) {
         console.error("Failed to start recognition:", e);
