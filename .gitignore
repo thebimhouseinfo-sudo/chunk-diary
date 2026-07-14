@@ -6,10 +6,6 @@ build/
 # Dependencies
 node_modules/
 
-# Logs and temp files
-*.log
-*.tmp
-
 # Environment
 .env
 .env.local
@@ -18,6 +14,11 @@ node_modules/
 # Editors
 .vscode/
 .idea/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Python
 __pycache__/
@@ -28,10 +29,10 @@ __pycache__/
 # Compiled files
 *.o
 *.obj
-*.exe
-*.dll
 *.so
 *.a
+*.dll
+*.exe
 *.out
 
 # Compression
@@ -58,7 +59,7 @@ __pycache__/
 *.tar.xz
 *.tar.zst
 
-# System files
+# System
 .DS_Store
 Thumbs.db
 
@@ -68,12 +69,21 @@ coverage/
 htmlcov/
 .mypy_cache/
 .pytest_cache/
+
+# Java/Maven
 target/
 .gradle/
 
-# Backup files
-*.bak
-*.backup
-*.swp
-*.swo
+# Go
+*.mod
+*.sum
+
+# Rust
+target/
+
+# Julia
+julia-*/
+
+# Zig
+zig*/
 ```

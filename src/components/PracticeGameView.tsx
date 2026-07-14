@@ -65,17 +65,26 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
 
+      recognitionRef.current.onstart = () => {
+        console.log("PracticeGame: SpeechRecognition started");
+      };
+
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
+        console.log("PracticeGame: Speech recognition result:", transcript);
         if (handleRecognitionResultRef.current) {
           handleRecognitionResultRef.current(transcript);
         }
       };
 
       recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error", event.error);
+        console.error("PracticeGame: Speech recognition error", event.error);
         if (event.error === 'not-allowed') {
           setSpeechError("Trình duyệt không được phép sử dụng Micro.");
+        } else if (event.error === 'audio-capture') {
+          setSpeechError("Không tìm thấy micro hoặc lỗi thu âm.");
+        } else if (event.error === 'no-speech') {
+          setSpeechError("Không nghe thấy giọng nói. Hãy thử lại!");
         } else {
           setSpeechError(`Lỗi nhận dạng giọng nói: ${event.error}`);
         }
@@ -83,6 +92,7 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
       };
       
       recognitionRef.current.onend = () => {
+        console.log("PracticeGame: Speech recognition ended");
         setIsRecording(false);
       };
     }
@@ -95,14 +105,20 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
     if (recognitionRef.current) {
       try {
         recognitionRef.current.lang = getLangCode(currentChunk.language);
-        recognitionRef.current.start();
+        // Small delay to ensure handlers are fully set up
+        setTimeout(() => {
+          recognitionRef.current.start();
+          console.log("PracticeGame: SpeechRecognition.start() called");
+        }, 50);
         setIsRecording(true);
       } catch (err) {
+        console.error("Failed to start recognition:", err);
         setSpeechError("Micro đang bận hoặc có lỗi khởi tạo.");
         setIsRecording(false);
       }
     } else {
       // Fallback for no speech recognition support
+      console.log("PracticeGame: No speech recognition support, using fallback");
       setIsRecording(true);
       setTimeout(() => {
         setIsRecording(false);

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, Keyboard, Sparkles, Volume2 } from "lucide-react";
+import { getBrowserInfo } from "../../../utils/browser";
 
 interface VoiceInputProps {
   onTranscriptionStart: () => void;
@@ -24,6 +25,7 @@ export default function VoiceInput({
   const streamRef = useRef<MediaStream | null>(null);
   const waveformTimeoutRef = useRef<any>(null);
   const pointerActiveRef = useRef(false);
+  const recognitionStartedRef = useRef(false);
 
   // Initialize microphone and audio analysis on mount
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function VoiceInput({
   const startListening = useCallback(async () => {
     if (pointerActiveRef.current) return; // Prevent double-triggering
     pointerActiveRef.current = true;
+    recognitionStartedRef.current = false;
     
     setIsHolding(true);
     setRecognitionState('initializing');
@@ -88,6 +91,9 @@ export default function VoiceInput({
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = false;
+      
+      // Get browser info and set language accordingly
+      const browserInfo = getBrowserInfo();
       recognition.lang = "vi-VN";
 
       // iOS Safari specific: prevent the recognition from ending prematurely
@@ -95,6 +101,7 @@ export default function VoiceInput({
 
       recognition.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
+        console.log("Speech recognition result:", text);
         if (text && text.trim()) {
           onTranscriptionEnd(text.trim());
         } else {
@@ -109,14 +116,21 @@ export default function VoiceInput({
           console.log("No speech detected, waiting for retry");
         } else if (event.error === 'not-allowed') {
           console.log("Microphone permission not allowed");
+        } else if (event.error === 'audio-capture') {
+          console.log("No microphone found or audio capture failed");
+        } else if (event.error === 'bad-grammar') {
+          console.log("Bad grammar in recognition request");
         }
         setRecognitionState('idle');
         onTranscriptionEnd("");
       };
 
       recognition.onend = () => {
+        console.log("Speech recognition ended");
         setIsHolding(false);
         setRecognitionState('idle');
+        pointerActiveRef.current = false;
+        recognitionStartedRef.current = false;
       };
 
       // Waveform activation with priority order and fallback timeout
@@ -132,6 +146,7 @@ export default function VoiceInput({
       // Priority 1: onstart fires when recognition begins
       recognition.onstart = () => {
         console.log("SpeechRecognition started");
+        recognitionStartedRef.current = true;
         activateWaveform();
       };
 
@@ -155,17 +170,20 @@ export default function VoiceInput({
 
       recognitionRef.current = recognition;
       
-      // Start recognition
+      // Start recognition with a small delay to ensure all handlers are set up
       try {
-        recognition.start();
+        setTimeout(() => {
+          recognition.start();
+          console.log("SpeechRecognition.start() called");
+        }, 50);
         
-        // Fallback timeout: if no event fires within 300ms, show waveform anyway
+        // Fallback timeout: if no event fires within 500ms, show waveform anyway
         waveformTimeoutRef.current = setTimeout(() => {
           if (!waveformActivated && isHolding) {
             console.log("Waveform timeout fallback - showing waveform");
             activateWaveform();
           }
-        }, 300);
+        }, 500);
         
       } catch (e) {
         console.error("Failed to start recognition:", e);
@@ -176,6 +194,7 @@ export default function VoiceInput({
       }
     } else {
       // Mockup transcription fallback
+      console.log("Speech recognition not supported, using fallback");
       setTimeout(() => {
         onTranscriptionEnd("Hôm nay mình dậy hơi muộn. Sau đó mình đưa con đi học.");
         setIsHolding(false);
