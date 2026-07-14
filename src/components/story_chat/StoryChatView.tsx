@@ -204,8 +204,11 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         const parsed = await getSettings();
         if (parsed && parsed.onboarded) {
           setHasProfile(true);
-          // Request mic permission immediately when Story Chat is opened
-          await requestMicPermission();
+          // KHÔNG xin quyền mic ở đây nữa — đây là useEffect lúc mount, NGOÀI
+          // user-gesture, nên trình duyệt (đặc biệt Safari/mobile) sẽ không hiện
+          // popup mà tự âm thầm reject, khiến app hiểu nhầm là user đã từ chối.
+          // Việc xin quyền sẽ để VoiceInput tự xử lý đúng lúc user bấm nút mic
+          // (bên trong user-gesture thật, giống cách PracticeGameView đang làm).
           await initSession();
         } else {
           setShowOnboarding(true);
@@ -677,6 +680,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               onTranscriptionStart={handleTranscriptionStart}
               onTranscriptionEnd={handleTranscriptionEnd}
               onSwitchMode={() => setInputMode("typing")}
+              onMicPermissionDenied={() => {
+                setMicErrorType('denied');
+                setShowMicPermissionModal(true);
+              }}
             />
           ) : (
             <TypingInput
