@@ -1,1 +1,24 @@
-Nothing should be ignored since the changes only include source code files (.tsx) and no build artifacts, dependencies, or temporary files.
+```
+# Build artifacts
+dist/
+*.css
+*.js
+
+# Dependencies
+node_modules/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*
+```

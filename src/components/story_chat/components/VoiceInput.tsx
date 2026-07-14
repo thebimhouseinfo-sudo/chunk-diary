@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Mic, Keyboard, Sparkles, Volume2 } from "lucide-react";
 import { getBrowserInfo } from "../../../utils/browser";
 
@@ -6,7 +6,7 @@ interface VoiceInputProps {
   onTranscriptionStart: () => void;
   onTranscriptionEnd: (text: string) => void;
   onSwitchMode: () => void;
-  onMicPermissionDenied?: () => void; // gọi khi user thực sự từ chối quyền mic
+  onMicPermissionDenied?: () => void;
 }
 
 export default function VoiceInput({
@@ -15,44 +15,47 @@ export default function VoiceInput({
   onSwitchMode,
   onMicPermissionDenied
 }: VoiceInputProps) {
-  const [isHolding, setIsHolding] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
   const [recognitionState, setRecognitionState] = useState<'idle' | 'initializing' | 'listening'>('idle');
+  const [micPermissionGranted, setMicPermissionGranted] = useState<boolean | null>(null);
   const recognitionRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const waveformTimeoutRef = useRef<any>(null);
-  const pointerActiveRef = useRef(false);
-  const recognitionStartedRef = useRef(false);
 
-  // KHÔNG "làm nóng" mic bằng getUserMedia() ở đây nữa — useEffect lúc mount
-  // là NGOÀI user-gesture, dễ khiến trình duyệt (Safari/mobile) tự reject mà
-  // không hiện popup. Việc xin quyền sẽ diễn ra tự nhiên khi recognition.start()
-  // được gọi bên trong user-gesture thật (lúc user nhấn giữ nút mic), giống hệt
-  // cách PracticeGameView đang làm (đã kiểm chứng hoạt động ổn định).
+  // Check mic permission on mount - only check, don't request
   useEffect(() => {
+    const checkMicPermission = async () => {
+      try {
+        if ('permissions' in navigator) {
+          const result = await (navigator.permissions as any).query({ name: 'microphone' });
+          setMicPermissionGranted(result.state === 'granted');
+          
+          result.onchange = () => {
+            setMicPermissionGranted(result.state === 'granted');
+          };
+        }
+      } catch (err) {
+        console.log('Cannot check mic permission:', err);
+        setMicPermissionGranted(null);
+      }
+    };
+    
+    checkMicPermission();
+    
     return () => {
-      // Cleanup audio resources
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (waveformTimeoutRef.current) clearTimeout(waveformTimeoutRef.current);
     };
   }, []);
 
   const startListening = useCallback(async () => {
-    if (pointerActiveRef.current) return; // Prevent double-triggering
-    pointerActiveRef.current = true;
-    recognitionStartedRef.current = false;
+    // If mic permission was previously denied, show permission modal
+    if (micPermissionGranted === false) {
+      onMicPermissionDenied?.();
+      return;
+    }
     
-    setIsHolding(true);
     setRecognitionState('initializing');
     onTranscriptionStart();
 
@@ -88,6 +91,7 @@ export default function VoiceInput({
           console.log("No speech detected, waiting for retry");
         } else if (event.error === 'not-allowed') {
           console.log("Microphone permission not allowed");
+          setMicPermissionGranted(false);
           onMicPermissionDenied?.();
         } else if (event.error === 'audio-capture') {
           console.log("No microphone found or audio capture failed");
@@ -95,15 +99,13 @@ export default function VoiceInput({
           console.log("Bad grammar in recognition request");
         }
         setRecognitionState('idle');
-        onTranscriptionEnd("");
+        setIsListening(false);
       };
 
       recognition.onend = () => {
         console.log("Speech recognition ended");
-        setIsHolding(false);
+        setIsListening(false);
         setRecognitionState('idle');
-        pointerActiveRef.current = false;
-        recognitionStartedRef.current = false;
       };
 
       // Waveform activation with priority order and fallback timeout
@@ -119,7 +121,6 @@ export default function VoiceInput({
       // Priority 1: onstart fires when recognition begins
       recognition.onstart = () => {
         console.log("SpeechRecognition started");
-        recognitionStartedRef.current = true;
         activateWaveform();
       };
 
@@ -144,7 +145,7 @@ export default function VoiceInput({
       recognitionRef.current = recognition;
       
       // Gọi recognition.start() ngay lập tức, KHÔNG delay, để không mất các từ đầu
-      // câu nói của user (mic đã được "làm nóng" từ trước nên không cần chờ thêm).
+      // câu nói của user.
       try {
         recognition.start();
         console.log("SpeechRecognition.start() called");
@@ -152,7 +153,7 @@ export default function VoiceInput({
         // Fallback timeout: nếu không browser nào bắn event nào trong 300ms,
         // vẫn phải hiện waveform, không được để waveform "mất" luôn.
         waveformTimeoutRef.current = setTimeout(() => {
-          if (!waveformActivated && isHolding) {
+          if (!waveformActivated && isListening) {
             console.log("Waveform timeout fallback - showing waveform");
             activateWaveform();
           }
@@ -160,9 +161,8 @@ export default function VoiceInput({
         
       } catch (e) {
         console.error("Failed to start recognition:", e);
-        setIsHolding(false);
+        setIsListening(false);
         setRecognitionState('idle');
-        pointerActiveRef.current = false;
         onTranscriptionEnd("");
       }
     } else {
@@ -170,56 +170,41 @@ export default function VoiceInput({
       console.log("Speech recognition not supported, using fallback");
       setTimeout(() => {
         onTranscriptionEnd("Hôm nay mình dậy hơi muộn. Sau đó mình đưa con đi học.");
-        setIsHolding(false);
+        setIsListening(false);
         setRecognitionState('idle');
-        pointerActiveRef.current = false;
       }, 2000);
     }
-  }, [onTranscriptionStart, onTranscriptionEnd, isHolding]);
+  }, [onTranscriptionStart, onTranscriptionEnd, isListening, micPermissionGranted]);
 
   const stopListening = useCallback(() => {
-    if (recognitionRef.current && isHolding) {
+    if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
     }
-    setIsHolding(false);
+    setIsListening(false);
     setRecognitionState('idle');
-    pointerActiveRef.current = false;
     
     // Clear waveform timeout
     if (waveformTimeoutRef.current) {
       clearTimeout(waveformTimeoutRef.current);
       waveformTimeoutRef.current = null;
     }
-  }, [isHolding]);
+  }, [isListening]);
 
-  // Handle pointer events for unified desktop/mobile interaction
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+  // Handle click event for simple tap-to-talk interaction
+  const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    startListening();
-  }, [startListening]);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    stopListening();
-  }, [stopListening]);
-
-  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    stopListening();
-  }, [stopListening]);
-
-  const handlePointerLeave = useCallback(() => {
-    // Stop recording if pointer leaves the button while holding
-    if (isHolding) {
+    if (isListening) {
       stopListening();
+    } else {
+      startListening();
     }
-  }, [isHolding, stopListening]);
+  }, [isListening, startListening, stopListening]);
 
   return (
     <div className="mic-input-container flex flex-col items-center justify-center py-1 px-4 bg-slate-50/50 rounded-b-[2.5rem] border-t border-slate-100 relative">
       {/* Sóng âm sinh động - only shows when mic is actually active */}
       <div className="mic-waveform-container h-8 flex items-center justify-center gap-1.5 mb-1 w-full">
-        {isHolding && recognitionState === 'listening' && (
+        {isListening && recognitionState === 'listening' && (
           <div className="flex items-center gap-1">
             <Volume2 className="text-vibrant-coral animate-bounce mr-2" size={12} />
             {amplitude.map((h, i) => (
@@ -243,19 +228,16 @@ export default function VoiceInput({
           <Keyboard size={18} />
         </button>
 
-        {/* Nút Mic chính cỡ lớn - optimized for mobile using Pointer Events */}
+        {/* Nút Mic chính cỡ lớn - optimized for mobile using Click Events (tap-to-talk) */}
         <button
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerCancel}
-          onPointerLeave={handlePointerLeave}
+          onClick={handleClick}
           className={`w-18 h-18 sm:w-24 sm:h-24 bg-gradient-to-tr from-vibrant-indigo to-vibrant-indigo/90 text-white rounded-full flex items-center justify-center shadow-xl transition-all cursor-pointer select-none active:scale-90 touch-none ${
-            isHolding
+            isListening
               ? "ring-6 ring-vibrant-indigo/25 scale-105 shadow-vibrant-indigo/20"
               : "hover:scale-102 shadow-vibrant-indigo/10"
           }`}
         >
-          <Mic size={28} className={`${isHolding ? "text-vibrant-mint scale-110" : "text-white"}`} />
+          <Mic size={28} className={`${isListening ? "text-vibrant-mint scale-110" : "text-white"}`} />
         </button>
 
         {/* Placeholder giữ thăng bằng */}
@@ -263,15 +245,15 @@ export default function VoiceInput({
       </div>
 
       <div className="text-xs text-slate-500 mt-2 font-bold tracking-tight text-center select-none max-w-xs leading-relaxed">
-        {isHolding ? (
+        {isListening ? (
           recognitionState === 'listening' ? (
-            <span className="text-vibrant-coral animate-pulse">Đang ghi âm... Thả tay để gửi</span>
+            <span className="text-vibrant-coral animate-pulse">Đang nghe... Chạm để dừng</span>
           ) : (
             <span className="text-slate-400 animate-pulse">Đang khởi tạo micro...</span>
           )
         ) : (
           <span className="text-slate-400 flex items-center justify-center gap-1.5 uppercase tracking-wide">
-            <Sparkles size={12} className="text-vibrant-indigo shrink-0" /> Nhấn giữ để kể câu chuyện của bạn bằng tiếng Việt
+            <Sparkles size={12} className="text-vibrant-indigo shrink-0" /> Chạm để kể câu chuyện của bạn bằng tiếng Việt
           </span>
         )}
       </div>

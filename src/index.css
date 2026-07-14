@@ -168,4 +168,14 @@ p, h1, h2, h3, h4, h5, h6, span, li {
     display: flex;
     flex-direction: column;
   }
+  
+  /* Hide header on mobile devices */
+  .story-chat-header {
+    display: none;
+  }
+  
+  /* Ensure message area takes proper height on mobile */
+  .story-chat-messages {
+    height: calc(100dvh - 120px); /* Adjust based on footer height */
+  }
 }
