@@ -6,16 +6,17 @@ interface VoiceInputProps {
   onTranscriptionStart: () => void;
   onTranscriptionEnd: (text: string) => void;
   onSwitchMode: () => void;
+  onMicPermissionDenied?: () => void; // gọi khi user thực sự từ chối quyền mic
 }
 
 export default function VoiceInput({
   onTranscriptionStart,
   onTranscriptionEnd,
-  onSwitchMode
+  onSwitchMode,
+  onMicPermissionDenied
 }: VoiceInputProps) {
   const [isHolding, setIsHolding] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
-  const [isMicReady, setIsMicReady] = useState(false);
   const [recognitionState, setRecognitionState] = useState<'idle' | 'initializing' | 'listening'>('idle');
   const recognitionRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
@@ -27,32 +28,12 @@ export default function VoiceInput({
   const pointerActiveRef = useRef(false);
   const recognitionStartedRef = useRef(false);
 
-  // Initialize microphone and audio analysis on mount
+  // KHÔNG "làm nóng" mic bằng getUserMedia() ở đây nữa — useEffect lúc mount
+  // là NGOÀI user-gesture, dễ khiến trình duyệt (Safari/mobile) tự reject mà
+  // không hiện popup. Việc xin quyền sẽ diễn ra tự nhiên khi recognition.start()
+  // được gọi bên trong user-gesture thật (lúc user nhấn giữ nút mic), giống hệt
+  // cách PracticeGameView đang làm (đã kiểm chứng hoạt động ổn định).
   useEffect(() => {
-    const initMic = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        });
-        
-        // Stop the stream immediately after getting permission
-        // This saves battery, avoids persistent mic icon on Android, and prevents Safari from keeping audio session
-        stream.getTracks().forEach(track => track.stop());
-        
-        setIsMicReady(true);
-        
-      } catch (err) {
-        console.error("Mic initialization failed:", err);
-        setIsMicReady(false);
-      }
-    };
-    
-    initMic();
-    
     return () => {
       // Cleanup audio resources
       if (audioContextRef.current) {
@@ -74,31 +55,6 @@ export default function VoiceInput({
     setIsHolding(true);
     setRecognitionState('initializing');
     onTranscriptionStart();
-
-    // Nếu lần "làm nóng" mic lúc mount chưa thành công (rất hay gặp trên iOS Safari
-    // vì getUserMedia gọi ngoài user-gesture sẽ bị chặn), thử xin quyền lại NGAY TẠI ĐÂY —
-    // vì đây đang là bên trong 1 user-gesture hợp lệ (pointerdown), khác với lúc mount.
-    if (!isMicReady) {
-      console.log("Mic not ready yet, requesting permission inside user gesture...");
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        });
-        stream.getTracks().forEach(track => track.stop());
-        setIsMicReady(true);
-      } catch (err) {
-        console.error("Mic permission request failed inside user gesture:", err);
-        pointerActiveRef.current = false;
-        setIsHolding(false);
-        setRecognitionState('idle');
-        onTranscriptionEnd("");
-        return;
-      }
-    }
 
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -132,6 +88,7 @@ export default function VoiceInput({
           console.log("No speech detected, waiting for retry");
         } else if (event.error === 'not-allowed') {
           console.log("Microphone permission not allowed");
+          onMicPermissionDenied?.();
         } else if (event.error === 'audio-capture') {
           console.log("No microphone found or audio capture failed");
         } else if (event.error === 'bad-grammar') {
@@ -218,7 +175,7 @@ export default function VoiceInput({
         pointerActiveRef.current = false;
       }, 2000);
     }
-  }, [isMicReady, onTranscriptionStart, onTranscriptionEnd, isHolding]);
+  }, [onTranscriptionStart, onTranscriptionEnd, isHolding]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current && isHolding) {
