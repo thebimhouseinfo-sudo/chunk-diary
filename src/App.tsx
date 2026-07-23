@@ -150,7 +150,7 @@ export default function App() {
       </header>
 
       {/* Main Content Stage container */}
-      <main className={`flex-1 w-full mx-auto flex flex-col ${isStoryChat ? "max-w-none px-0 py-0 justify-start min-h-0" : "max-w-7xl px-4 sm:px-6 lg:px-8 py-3 sm:py-5 justify-center"}`}>
+      <main className={`flex-1 w-full mx-auto flex flex-col ${isStoryChat ? "max-w-none px-0 py-0 justify-start min-h-0" : "max-w-7xl px-4 sm:px-6 lg:px-8 py-3 sm:py-5"}`}>
         
         {activeTab === "home" && (
           <HomeView

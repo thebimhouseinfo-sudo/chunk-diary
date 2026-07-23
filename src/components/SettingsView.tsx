@@ -205,22 +205,20 @@ export default function SettingsView() {
                   <button
                     type="button"
                     onClick={() => setSettings({ ...settings, learningPurpose: "hobby" })}
-                    className={`flex items-center justify-center gap-2 p-3.5 rounded-2xl text-xs font-black uppercase tracking-tight border transition-all cursor-pointer ${
-                      settings.learningPurpose === "hobby"
+                    className={`flex items-center justify-center gap-2 p-3.5 rounded-2xl text-xs font-black uppercase tracking-tight border transition-all cursor-pointer ${settings.learningPurpose === "hobby"
                         ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
                         : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
-                    }`}
+                      }`}
                   >
                     <Heart size={14} /> Sở thích
                   </button>
                   <button
                     type="button"
                     onClick={() => setSettings({ ...settings, learningPurpose: "work" })}
-                    className={`flex items-center justify-center gap-2 p-3.5 rounded-2xl text-xs font-black uppercase tracking-tight border transition-all cursor-pointer ${
-                      settings.learningPurpose === "work"
+                    className={`flex items-center justify-center gap-2 p-3.5 rounded-2xl text-xs font-black uppercase tracking-tight border transition-all cursor-pointer ${settings.learningPurpose === "work"
                         ? "bg-vibrant-indigo text-white border-vibrant-indigo shadow-md"
                         : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
-                    }`}
+                      }`}
                   >
                     <Briefcase size={14} /> Công việc
                   </button>
@@ -275,7 +273,7 @@ export default function SettingsView() {
               ${saveSuccess
                 ? "bg-emerald-500 text-white shadow-emerald-500/30"
                 : "bg-vibrant-indigo text-white shadow-vibrant-indigo/30 hover:bg-vibrant-indigo/90"
-            }`}
+              }`}
           >
             {saveSuccess ? <Check size={18} /> : <Download size={18} />}
             {saveSuccess ? "Đã Lưu Cấu Hình!" : "Lưu Cấu Hình"}
