@@ -5,7 +5,7 @@ import { getSettings, saveSettings } from "./userDb";
 export { getSettings, saveSettings };
 
 const DB_NAME = "LanguageChunkDiaryDB";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 export async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -38,6 +38,15 @@ export async function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("englishChunks")) {
+        const engStore = db.createObjectStore("englishChunks", { keyPath: "id" });
+        engStore.createIndex("specialty", "specialty", { unique: false });
+        engStore.createIndex("packageId", "packageId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("userProgress")) {
+        const progStore = db.createObjectStore("userProgress", { keyPath: "id" });
+        progStore.createIndex("userId", "userId", { unique: false });
       }
     };
 
@@ -363,7 +372,7 @@ export async function clearAllIndexedDb(): Promise<void> {
     request.onsuccess = () => {
       console.log("IndexedDB cleared successfully.");
       // After deleting, we need to reopen it to re-create object stores for future use
-      openDB().then(resolve).catch(reject);
+      openDB().then(() => resolve()).catch(reject);
     };
 
     request.onerror = (event: any) => {

@@ -7,7 +7,6 @@ import TypingInput from "./components/TypingInput";
 import SummaryView from "./components/SummaryView";
 import SettingsModal from "./components/SettingsModal";
 import UserProfileSetup from "../profile/UserProfileSetup";
-import { MicPermissionModal } from "../MicPermissionModal";
 import { ChatMessage, ChatbotWorkflow } from "./workflow/chatbotWorkflow";
 import { StorySettings } from "./models/types";
 import { StoryService } from "./servises/storyService";
@@ -17,6 +16,9 @@ import { UserSettings, Chunk, MeaningUnit } from "../../types";
 import { getSettings } from "../../db/userDb";
 import { speakText } from "../../utils/tts";
 import { Sparkles, MessageSquare, History, BookOpen, Volume2, Play, ArrowRight } from "lucide-react";
+import { useMicPermission } from "../../hooks/useMicPermission";
+import { saveEnglishChunk } from "../../db/englishChunkDb";
+import { saveUserTargetProgress } from "../../db/userProgressDb";
 
 async function getDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -93,9 +95,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   // Onboarding Modal State
   const [showOnboarding, setShowOnboarding] = useState(false);
   
-  // Mic Permission Modal State
-  const [showMicPermissionModal, setShowMicPermissionModal] = useState(false);
-  const [micErrorType, setMicErrorType] = useState<'denied' | 'not_found' | 'other'>('denied');
+  const { micStatus, requestMic } = useMicPermission();
 
   const [settings, setSettings] = useState<StorySettings>({
     theme: "system",
@@ -111,7 +111,32 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   const [generatedChunks, setGeneratedChunks] = useState<Chunk[] | null>(null);
   const [userProfile, setUserProfile] = useState<UserSettings | null>(null);
 
+  useEffect(() => {
+    const updateViewportSize = () => {
+      const viewport = window.visualViewport;
+      const visibleHeight = viewport?.height ?? window.innerHeight;
+      const viewportOffsetTop = viewport?.offsetTop ?? 0;
+      const keyboardHeight = Math.max(0, window.innerHeight - visibleHeight - viewportOffsetTop);
 
+      document.documentElement.style.setProperty("--story-chat-viewport-height", `${visibleHeight}px`);
+      document.documentElement.style.setProperty("--story-chat-viewport-offset", `${viewportOffsetTop}px`);
+      document.documentElement.classList.toggle("story-chat-keyboard-open", keyboardHeight > 80);
+    };
+
+    updateViewportSize();
+    window.visualViewport?.addEventListener("resize", updateViewportSize);
+    window.visualViewport?.addEventListener("scroll", updateViewportSize);
+    window.addEventListener("resize", updateViewportSize);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateViewportSize);
+      window.visualViewport?.removeEventListener("scroll", updateViewportSize);
+      window.removeEventListener("resize", updateViewportSize);
+      document.documentElement.style.removeProperty("--story-chat-viewport-height");
+      document.documentElement.style.removeProperty("--story-chat-viewport-offset");
+      document.documentElement.classList.remove("story-chat-keyboard-open");
+    };
+  }, []);
 
   const initSession = async () => {
     // Ensure summary view is off by default when initializing a new session or after onboarding
@@ -234,24 +259,8 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
 
   // Request mic permission handler - called after profile creation or when user first clicks mic
   const requestMicPermission = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Stop the stream immediately after getting permission
-      stream.getTracks().forEach(track => track.stop());
-      // Permission granted, no need to show modal
-      setShowMicPermissionModal(false);
-    } catch (err: any) {
-      console.error("Mic permission error:", err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setMicErrorType('denied');
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setMicErrorType('not_found');
-      } else {
-        setMicErrorType('other');
-      }
-      setShowMicPermissionModal(true);
-    }
-  }, []);
+    await requestMic(true);
+  }, [requestMic]);
 
   const handleUpdateSettings = (newSettings: Partial<StorySettings>) => {
     const updated = { ...settings, ...newSettings };
@@ -433,29 +442,37 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       let userSettings = {
         nativeLanguage: "vi",
         learningLanguages: ["en"],
-        cefrLevel: "A2",
+        specialty: undefined as string | undefined,
+        subSpecialty: undefined as string | undefined,
         profileContext: "General topic"
       };
       
       try {
         const currentSettings = await getSettings();
         if (currentSettings) {
+          const profileParts: string[] = [];
+          if (currentSettings.specialty) profileParts.push(`Specialty: ${currentSettings.specialty}`);
+          if (currentSettings.subSpecialty) profileParts.push(`Sub-specialty: ${currentSettings.subSpecialty}`);
+          if (currentSettings.learningPurpose) profileParts.push(`Purpose: ${currentSettings.learningPurpose}`);
           userSettings = {
             nativeLanguage: currentSettings.nativeLanguage || "vi",
             learningLanguages: currentSettings.learningLanguages || ["en"],
-            cefrLevel: currentSettings.cefrLevel || "A2",
-            profileContext: currentSettings.learningPurpose === "work" ? (currentSettings.specialty || "General study") : "General study"
+            specialty: currentSettings.specialty,
+            subSpecialty: currentSettings.subSpecialty,
+            profileContext: profileParts.length > 0 ? profileParts.join(" | ") : "General study"
           };
         }
       } catch (e) {
         console.warn("Could not load setting context, using defaults", e);
       }
 
+      const targetLang = userSettings.learningLanguages[0] || "en";
       const apiResponse = await callGenerateChunks({
         diaryContent,
         nativeLanguage: userSettings.nativeLanguage,
-        targetLanguage: userSettings.learningLanguages[0] || "en",
-        cefrLevel: userSettings.cefrLevel,
+        targetLanguage: targetLang,
+        specialty: userSettings.specialty,
+        subSpecialty: userSettings.subSpecialty,
         profileContext: userSettings.profileContext,
         existingSemanticGroups: []
       });
@@ -488,15 +505,17 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
 
           const allChunks = [...unit.commonChunks, ...unit.personalizedChunks];
           for (const rawChunk of allChunks) {
+            const chunkType: "common" | "personalized" = unit.commonChunks.includes(rawChunk as any) ? "common" : "personalized";
+            const now = new Date().toISOString();
             const newChunk: Chunk = {
               id: crypto.randomUUID(),
               meaningUnitId: muId,
-              language: userSettings.learningLanguages[0] || "en",
+              language: targetLang,
               text: rawChunk.text,
-              meaning: rawChunk.english,
+              meaning: rawChunk.meaning || unit.nativeText || "",
               ipa: rawChunk.ipa || "",
               romanization: rawChunk.romanization || "",
-              chunkType: unit.commonChunks.includes(rawChunk as any) ? "common" : "personalized",
+              chunkType,
               stars: 0,
               bestAccuracy: 0,
               timesPracticed: 0,
@@ -506,7 +525,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               lastRating: 0,
               lastReviewed: "",
               sourceDiaryId: savedDiaryId,
-              sourceDiaryTitle: "Nhật ký ngày " + new Date().toLocaleDateString("vi-VN")
+              sourceDiaryTitle: "Nhật ký ngày " + new Date().toLocaleDateString("vi-VN"),
+              specialty: userSettings.specialty,
+              subSpecialty: userSettings.subSpecialty,
+              updatedAt: now
             };
             
             await new Promise<void>((resolve, reject) => {
@@ -517,6 +539,48 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               };
               req.onerror = () => reject(req.error);
             });
+
+            // --- Background save to englishChunkDb (English pivot for commercial packaging & merge) ---
+            // Case 1: Learning non-English → rawChunk.english is the English pivot
+            // Case 2: Learning English → the target chunk IS the English chunk
+            const englishText = rawChunk.english || rawChunk.text;
+            if (englishText) {
+              saveEnglishChunk({
+                id: crypto.randomUUID(),
+                text: englishText,
+                meaning: unit.nativeText || "",
+                ipa: rawChunk.ipa || "",
+                chunkType,
+                specialty: userSettings.specialty,
+                subSpecialty: userSettings.subSpecialty,
+                createdAt: now,
+                updatedAt: now
+              }).catch(err => console.warn("[englishChunkDb] Failed to save English chunk:", err));
+            }
+
+            // --- Background save to userProgressDb (Tiếng mẹ đẻ + Target Chunk + Stats for Restore) ---
+            saveUserTargetProgress({
+              id: crypto.randomUUID(),
+              nativeText: unit.nativeText || "",
+              targetLanguage: targetLang,
+              targetChunkText: rawChunk.text,
+              targetMeaning: rawChunk.english || "",
+              ipaOrPinyin: rawChunk.ipa || rawChunk.romanization || "",
+              chunkType,
+              specialty: userSettings.specialty,
+              subSpecialty: userSettings.subSpecialty,
+              stars: 0,
+              bestAccuracy: 0,
+              timesPracticed: 0,
+              lastPracticed: "",
+              totalReviews: 0,
+              averageRating: 0,
+              lastRating: 0,
+              lastReviewed: "",
+              createdAt: now,
+              updatedAt: now,
+              syncStatus: "pending_sync"
+            }).catch(err => console.warn("[userProgressDb] Failed to save user progress:", err));
           }
         }
       }
@@ -532,16 +596,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   };
 
   return (
-    <div className="story-chat-root bg-white rounded-[2rem] border border-slate-150/80 shadow-md overflow-hidden relative transition-all">
+    <div className="story-chat-root bg-white rounded-none sm:rounded-[2.5rem] border-0 sm:border border-slate-150/80 shadow-none sm:shadow-md overflow-hidden relative transition-all flex flex-col sm:h-auto sm:max-h-[85vh]">
       <UserProfileSetup show={showOnboarding} onCompleted={handleOnboardingCompleted} onRequestMicPermission={requestMicPermission} />
 
-      {/* Mic Permission Modal */}
-      {showMicPermissionModal && (
-        <MicPermissionModal 
-          onClose={() => setShowMicPermissionModal(false)} 
-          errorType={micErrorType} 
-        />
-      )}
+
 
       <div className="story-chat-header">
         <Header
@@ -556,7 +614,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         />
       </div>
 
-      <div className="story-chat-messages bg-slate-50/40 relative">
+      <div className="story-chat-messages bg-slate-50/40 relative flex-1 min-h-0 overflow-y-auto">
         {generatedChunks ? (
           <div className="p-6 sm:p-8 space-y-6 max-w-2xl w-full mx-auto animate-pageFadeIn text-left">
             {/* Celebration Hero Header Card */}
@@ -680,10 +738,8 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               onTranscriptionStart={handleTranscriptionStart}
               onTranscriptionEnd={handleTranscriptionEnd}
               onSwitchMode={() => setInputMode("typing")}
-              onMicPermissionDenied={() => {
-                setMicErrorType('denied');
-                setShowMicPermissionModal(true);
-              }}
+              micStatus={micStatus}
+              onRequestMic={requestMic}
             />
           ) : (
             <TypingInput
@@ -705,3 +761,5 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
     </div>
   );
 }
+
+

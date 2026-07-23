@@ -22,7 +22,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 // Sequential LLM generation handler
 async function tryGenerateWithModel(
@@ -316,9 +316,17 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
+  const pfxPath = process.env.HTTPS_PFX_PATH;
+  const pfxPassphrase = process.env.HTTPS_PFX_PASSPHRASE || "";
+  const server = pfxPath
+    ? https.createServer({ pfx: fs.readFileSync(pfxPath), passphrase: pfxPassphrase }, app)
+    : http.createServer(app);
+
+  server.listen(PORT, "0.0.0.0", () => {
+    const protocol = pfxPath ? "https" : "http";
+    console.log(`Server running at ${protocol}://0.0.0.0:${PORT}`);
   });
 }
 
 startServer();
+

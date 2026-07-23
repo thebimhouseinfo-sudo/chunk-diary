@@ -11,6 +11,7 @@ import {
 import { updateChunkReviewStats } from "../db/indexedDb";
 import { Chunk } from "../types";
 import { speakText } from "../utils/tts";
+import { useMicPermission } from "../hooks/useMicPermission";
 
 interface PracticeGameViewProps {
   practiceList: Chunk[];
@@ -46,6 +47,7 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
   const [attempts, setAttempts] = useState(0);
   const [speechError, setSpeechError] = useState<string | null>(null);
 
+  const { micStatus, requestMic } = useMicPermission();
   const recognitionRef = useRef<any>(null);
 
   const currentChunk = practiceList[currentIndex];
@@ -79,14 +81,15 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
 
       recognitionRef.current.onerror = (event: any) => {
         console.error("PracticeGame: Speech recognition error", event.error);
-        if (event.error === 'not-allowed') {
-          setSpeechError("Trình duyệt không được phép sử dụng Micro.");
-        } else if (event.error === 'audio-capture') {
-          setSpeechError("Không tìm thấy micro hoặc lỗi thu âm.");
-        } else if (event.error === 'no-speech') {
-          setSpeechError("Không nghe thấy giọng nói. Hãy thử lại!");
-        } else {
-          setSpeechError(`Lỗi nhận dạng giọng nói: ${event.error}`);
+        // Do not set speech error for not-allowed, as micStatus handles the banner
+        if (event.error !== 'not-allowed') {
+          if (event.error === 'audio-capture') {
+            setSpeechError("Không tìm thấy micro hoặc lỗi thu âm.");
+          } else if (event.error === 'no-speech') {
+            setSpeechError("Không nghe thấy giọng nói. Hãy thử lại!");
+          } else {
+            setSpeechError(`Lỗi nhận dạng giọng nói: ${event.error}`);
+          }
         }
         setIsRecording(false);
       };
@@ -102,19 +105,23 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
     setSpeechError(null);
     setShowResult(false);
 
+    if (micStatus === 'denied' || micStatus === 'not_found') {
+      requestMic(true);
+      return;
+    }
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.lang = getLangCode(currentChunk.language);
-        // Small delay to ensure handlers are fully set up
-        setTimeout(() => {
-          recognitionRef.current.start();
-          console.log("PracticeGame: SpeechRecognition.start() called");
-        }, 50);
+        // SYNCHRONOUS CALL — MUST NOT BE BEHIND AN AWAIT OR SETTIMEOUT TO PRESERVE iOS USER GESTURE
+        recognitionRef.current.start();
+        console.log("PracticeGame: SpeechRecognition.start() called synchronously");
         setIsRecording(true);
       } catch (err) {
         console.error("Failed to start recognition:", err);
-        setSpeechError("Micro đang bận hoặc có lỗi khởi tạo.");
+        setSpeechError("Micro đang bận hoặc chưa có quyền sử dụng.");
         setIsRecording(false);
+        requestMic(true);
       }
     } else {
       // Fallback for no speech recognition support
@@ -224,6 +231,16 @@ export default function PracticeGameView({ practiceList, onFinish }: PracticeGam
           <XCircle size={24} />
         </button>
       </div>
+
+      {(micStatus === 'denied' || micStatus === 'not_found') && (
+        <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-start gap-3 text-rose-800">
+          <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-bold">Cần quyền Micro</p>
+            <p className="text-xs">Vui lòng cấp quyền sử dụng Micro trong cài đặt trình duyệt để có thể luyện phát âm.</p>
+          </div>
+        </div>
+      )}
 
       {speechError && (
         <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex gap-3 text-amber-800">

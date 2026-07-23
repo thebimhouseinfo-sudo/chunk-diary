@@ -43,32 +43,32 @@ export default function Timeline({ messages, nickname }: TimelineProps) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto px-6 py-8 space-y-6 scroll-smooth"
+      className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6 scroll-smooth overscroll-contain"
     >
       {messages.map((msg) => {
         const isBot = msg.sender === "bot";
         return (
           <div
             key={msg.id}
-            className={`flex items-end gap-3 max-w-[85%] sm:max-w-[75%] ${
+            className={`flex items-end gap-2.5 sm:gap-3 max-w-[88%] sm:max-w-[75%] ${
               isBot ? "mr-auto text-left" : "ml-auto flex-row-reverse text-right"
             } animate-pageFadeIn`}
           >
             {/* Avatar */}
             <div
-              className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
                 isBot
                   ? "bg-vibrant-mint/20 text-vibrant-indigo border border-vibrant-mint/30"
                   : "bg-vibrant-coral/20 text-vibrant-coral border border-vibrant-coral/30"
               }`}
             >
-              {isBot ? <MessageCircle size={16} /> : <User size={16} />}
+              {isBot ? <MessageCircle size={15} /> : <User size={15} />}
             </div>
 
             {/* Bubble Container */}
             <div className="space-y-1">
               <div
-                className={`px-5 py-3.5 rounded-[1.5rem] text-sm leading-relaxed font-medium shadow-sm border ${
+                className={`px-4 py-2.5 sm:px-5 sm:py-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] text-sm leading-relaxed font-medium shadow-sm border ${
                   isBot
                     ? "bg-white text-slate-800 border-slate-100 rounded-bl-none"
                     : "bg-vibrant-indigo text-white border-vibrant-indigo/10 rounded-br-none"

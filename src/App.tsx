@@ -16,13 +16,13 @@ import MyChunksView from "./components/MyChunksView";
 import PracticeGameView from "./components/PracticeGameView";
 import SettingsView from "./components/SettingsView";
 import StoryChatView from "./components/story_chat/StoryChatView";
-import { MicPermissionModal } from "./components/MicPermissionModal";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("home");
   const [practiceQueue, setPracticeQueue] = useState<Chunk[]>([]);
-  const [micErrorType, setMicErrorType] = useState<'denied' | 'not_found' | 'other' | null>(null);
   const [isDbReady, setIsDbReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const isStoryChat = activeTab === "story_chat";
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -32,8 +32,9 @@ export default function App() {
         // Load voices for SpeechSynthesis
         loadVoices();
         setIsDbReady(true);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to initialize database:", err);
+        setInitError(err?.message || String(err));
       }
     };
     initializeApp();
@@ -45,21 +46,8 @@ export default function App() {
       return;
     }
     
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
-      
-      setPracticeQueue(chunks);
-      setActiveTab("practice");
-    } catch (err: any) {
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setMicErrorType('denied');
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setMicErrorType('not_found');
-      } else {
-        setMicErrorType('other');
-      }
-    }
+    setPracticeQueue(chunks);
+    setActiveTab("practice");
   };
 
   const handleFinishPractice = () => {
@@ -74,6 +62,27 @@ export default function App() {
     { id: "settings", label: "Cài đặt", icon: <Settings size={20} /> }
   ];
 
+  if (initError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-vibrant-bg flex-col p-6 space-y-4 text-center">
+        <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xl font-bold">⚠️</div>
+        <h2 className="text-lg font-black text-slate-800">Lỗi Khởi Động Ứng Dụng</h2>
+        <p className="text-sm text-slate-500 max-w-md bg-white p-4 rounded-xl border border-slate-100 font-mono break-all text-left">
+          {initError}
+        </p>
+        <button 
+          onClick={() => {
+            setInitError(null);
+            setIsDbReady(true);
+          }}
+          className="bg-vibrant-indigo text-white px-5 py-2 rounded-xl font-bold text-sm shadow-md cursor-pointer hover:bg-vibrant-indigo/90"
+        >
+          Bỏ qua & Tiếp tục
+        </button>
+      </div>
+    );
+  }
+
   if (!isDbReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-vibrant-bg flex-col space-y-4">
@@ -84,7 +93,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-vibrant-bg flex flex-col font-sans selection:bg-vibrant-mint/30 selection:text-vibrant-indigo pb-20 sm:pb-0">
+    <div className={`min-h-screen bg-vibrant-bg flex flex-col font-sans selection:bg-vibrant-mint/30 selection:text-vibrant-indigo ${isStoryChat ? "pb-0" : "pb-20 sm:pb-0"}`}>
       {/* Desktop Header Navbar */}
       <header className="hidden sm:block sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -131,7 +140,7 @@ export default function App() {
       </header>
 
       {/* Mobile Top Header (Minimal) */}
-      <header className="sm:hidden sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 h-14 flex items-center justify-between">
+      <header className={`sm:hidden sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 h-14 items-center justify-between ${isStoryChat ? "hidden" : "flex"}`}>
         <div onClick={() => setActiveTab("home")} className="flex items-center gap-2">
           <div className="w-8 h-8 bg-vibrant-coral rounded-lg flex items-center justify-center text-white">
             <Layers size={14} />
@@ -141,7 +150,7 @@ export default function App() {
       </header>
 
       {/* Main Content Stage container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-5 flex flex-col justify-center">
+      <main className={`flex-1 w-full mx-auto flex flex-col ${isStoryChat ? "max-w-none px-0 py-0 justify-start min-h-0" : "max-w-7xl px-4 sm:px-6 lg:px-8 py-3 sm:py-5 justify-center"}`}>
         
         {activeTab === "home" && (
           <HomeView
@@ -222,13 +231,7 @@ export default function App() {
           </p>
         </div>
       </footer>
-
-      {micErrorType && (
-        <MicPermissionModal 
-          errorType={micErrorType} 
-          onClose={() => setMicErrorType(null)} 
-        />
-      )}
     </div>
   );
 }
+

@@ -27,23 +27,12 @@
 
 /* Responsive root font sizing using clamp for smooth scaling */
 html {
-  /* Smooth responsive font sizing (áp dụng cho Chrome/Edge/Firefox...):
-     - Minimum: 13.5px (small mobile)
+  /* Smooth responsive font sizing:
+     - Minimum: 12.5px (small mobile)
      - Preferred: scales with viewport width
      - Maximum: 16px (desktop)
   */
-  font-size: clamp(13.5px, 0.85rem + 0.2vw, 16px);
-  /* Chuẩn hoá hành vi auto-adjust cỡ chữ mặc định của WebKit trên các browser
-     không phải Safari, tránh cộng dồn 2 lớp scale khác nhau */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-/* Safari (desktop + iOS): dùng font-size CỐ ĐỊNH làm điểm neo, để Safari tự lo
-   việc scale theo Dynamic Type / pinch-zoom / cỡ chữ hệ thống của người dùng —
-   không dùng clamp() theo vw vì Safari cần 1 mốc cố định để nhân tỉ lệ đúng. */
-html.browser-safari {
-  font-size: 16px;
+  font-size: clamp(12.5px, 0.75rem + 0.15vw, 16px);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -54,8 +43,6 @@ body {
   color: #1e293b;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Prevent overscroll bounce on mobile */
-  overscroll-behavior: none;
   /* Prevent text selection on UI elements */
   -webkit-user-select: none;
   user-select: none;
@@ -99,7 +86,7 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 
 /* Safe areas for mobile using env() */
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 .pt-safe {
   padding-top: env(safe-area-inset-top);
@@ -109,9 +96,8 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 .story-chat-root {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  height: 100svh;
-  height: 100vh;
+  height: var(--story-chat-viewport-height, 100dvh);
+  min-height: 0;
   width: 100%;
   overflow: hidden;
   position: relative;
@@ -127,7 +113,8 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 
 /* Message list scrolls independently */
 .story-chat-messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -140,12 +127,17 @@ p, h1, h2, h3, h4, h5, h6, span, li {
   position: sticky;
   bottom: 0;
   z-index: 10;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
 /* Reduce whitespace above mic button */
 .mic-input-container {
   padding-top: 0.5rem !important;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
+}
+
+.story-chat-keyboard-open .story-chat-footer,
+.story-chat-keyboard-open .mic-input-container {
   padding-bottom: 0.5rem !important;
 }
 
@@ -154,18 +146,27 @@ p, h1, h2, h3, h4, h5, h6, span, li {
   height: 1rem !important;
 }
 
-/* Prevent layout shifts from browser UI */
+/* App container alignment for mobile */
 @media (max-width: 768px) {
-  /* Ensure full viewport usage without page scrolling */
-  body, html {
+  html,
+  body,
+  #root {
     height: 100%;
     overflow: hidden;
   }
-  
-  /* Main app container should fill viewport */
+
   #root {
-    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
+  }
+
+  .story-chat-root {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    transform: translateY(var(--story-chat-viewport-offset, 0px));
   }
 }

@@ -32,7 +32,7 @@ export function getBrowserFingerprint(): string {
   return `FP-${Math.abs(hash)}-${localId}`;
 }
 
-const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwpyzwd0bWlj2JGrCcaQJms-CgVzGOd32ypzkCl-oZhB6CC0Q0HVNMC-9F7KnNiNRZx/exec";
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbyStG369Ro9bDaz5V5N9npxpSwsiu7aBrRa1bjlklfp4iMdKSw8d0ldMdOJKuz9Qz6J/exec";
 
 export interface AIServiceResponse {
   englishNarrative: string;
@@ -43,6 +43,7 @@ export interface AIServiceResponse {
     commonChunks: Array<{
       english: string;
       text: string;
+      meaning: string;
       ipa: string;
       romanization: string;
       semanticGroupId: string;
@@ -51,6 +52,7 @@ export interface AIServiceResponse {
     personalizedChunks: Array<{
       english: string;
       text: string;
+      meaning: string;
       ipa: string;
       romanization: string;
       semanticGroupId: string;
@@ -63,9 +65,28 @@ export interface GenerateChunksInput {
   diaryContent: string;
   nativeLanguage: string;
   targetLanguage: string;
-  cefrLevel: string;
+  cefrLevel?: string;
+  specialty?: string;
+  subSpecialty?: string;
   profileContext: string;
   existingSemanticGroups: SemanticGroup[];
+}
+
+/**
+ * Builds a structured profile context string emphasizing user specialty and purpose for AI personalization.
+ */
+export function buildProfileContext(settings?: {
+  specialty?: string;
+  subSpecialty?: string;
+  learningPurpose?: string;
+  nickname?: string;
+}): string {
+  if (!settings) return "";
+  const parts: string[] = [];
+  if (settings.specialty) parts.push(`Specialty/Profession: ${settings.specialty}`);
+  if (settings.subSpecialty) parts.push(`Sub-Specialty: ${settings.subSpecialty}`);
+  if (settings.learningPurpose) parts.push(`Purpose: ${settings.learningPurpose}`);
+  return parts.join(" | ");
 }
 
 /**
