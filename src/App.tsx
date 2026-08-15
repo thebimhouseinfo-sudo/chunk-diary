@@ -93,7 +93,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-vibrant-bg flex flex-col font-sans selection:bg-vibrant-mint/30 selection:text-vibrant-indigo ${isStoryChat ? "pb-0" : "pb-20 sm:pb-0"}`}>
+    <div className={`min-h-screen bg-vibrant-bg flex flex-col font-sans selection:bg-vibrant-mint/30 selection:text-vibrant-indigo ${isStoryChat ? "pb-0" : "mobile-app-shell"}`}>
       {/* Desktop Header Navbar */}
       <header className="hidden sm:block sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -140,7 +140,7 @@ export default function App() {
       </header>
 
       {/* Mobile Top Header (Minimal) */}
-      <header className={`sm:hidden sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 h-14 items-center justify-between ${isStoryChat ? "hidden" : "flex"}`}>
+      <header className={`mobile-top-header sm:hidden sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 items-center justify-between ${isStoryChat ? "hidden" : "flex"}`}>
         <div onClick={() => setActiveTab("home")} className="flex items-center gap-2">
           <div className="w-8 h-8 bg-vibrant-coral rounded-lg flex items-center justify-center text-white">
             <Layers size={14} />
@@ -234,4 +234,3 @@ export default function App() {
     </div>
   );
 }
-
