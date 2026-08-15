@@ -86,7 +86,7 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 
 /* Safe areas for mobile using env() */
 .mobile-app-shell {
-  padding-bottom: calc(4rem + max(1rem, env(safe-area-inset-bottom)));
+  padding-bottom: 64px;
 }
 
 .mobile-top-header {
@@ -95,7 +95,11 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 }
 
 .pb-safe {
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  padding-bottom: 0;
+}
+
+.mobile-bottom-nav-inner {
+  height: 64px;
 }
 .pt-safe {
   padding-top: env(safe-area-inset-top);
@@ -193,17 +197,5 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 
   .story-chat-header {
     padding-top: 0;
-  }
-}
-
-/* Installed PWA/fullscreen has no browser toolbar to clear. Keep only a
-   compact home-indicator buffer instead of the full browser safe-area gap. */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  .pb-safe {
-    padding-bottom: 0.25rem;
-  }
-
-  .mobile-app-shell {
-    padding-bottom: 4.5rem;
   }
 }
