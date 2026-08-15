@@ -195,7 +195,7 @@ export default function App() {
 
       {/* Mobile Bottom Navigation */}
       <nav className={`sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-slate-100 px-2 pb-safe ${activeTab === "story_chat" ? "hidden" : ""}`}>
-        <div className="flex items-center justify-around h-16">
+        <div className="mobile-bottom-nav-inner flex items-center justify-around">
           {navItems.map((tab) => {
             const isActive = activeTab === tab.id || (tab.id === "diary" && activeTab === "story_chat");
             return (
