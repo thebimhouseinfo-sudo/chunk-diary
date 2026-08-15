@@ -85,6 +85,15 @@ p, h1, h2, h3, h4, h5, h6, span, li {
 }
 
 /* Safe areas for mobile using env() */
+.mobile-app-shell {
+  padding-bottom: calc(4rem + max(1rem, env(safe-area-inset-bottom)));
+}
+
+.mobile-top-header {
+  min-height: calc(3.5rem + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+
 .pb-safe {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
@@ -109,6 +118,8 @@ p, h1, h2, h3, h4, h5, h6, span, li {
   position: sticky;
   top: 0;
   z-index: 10;
+  padding-top: env(safe-area-inset-top);
+  background: white;
 }
 
 /* Message list scrolls independently */
@@ -172,5 +183,15 @@ p, h1, h2, h3, h4, h5, h6, span, li {
     left: 0;
     right: 0;
     transform: translateY(var(--story-chat-viewport-offset, 0px));
+  }
+}
+
+@media (min-width: 640px) {
+  .mobile-app-shell {
+    padding-bottom: 0;
+  }
+
+  .story-chat-header {
+    padding-top: 0;
   }
 }
