@@ -195,3 +195,15 @@ p, h1, h2, h3, h4, h5, h6, span, li {
     padding-top: 0;
   }
 }
+
+/* Installed PWA/fullscreen has no browser toolbar to clear. Keep only a
+   compact home-indicator buffer instead of the full browser safe-area gap. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .pb-safe {
+    padding-bottom: 0.25rem;
+  }
+
+  .mobile-app-shell {
+    padding-bottom: 4.5rem;
+  }
+}
