@@ -1,24 +1,28 @@
-## Run Locally
+# ChunkDiary
 
-**Prerequisites:**  Node.js
+ChunkDiary is a React + TypeScript + Vite application for chunk-based language learning.
 
+## Run locally
 
+Prerequisite: Node.js
 
-1. Install dependencies:
-`npm install`
-2. Run the app:
-`npm run dev`
+```bash
+npm install
+npm run dev
+```
 
+## Build frontend
 
-## Deploy to GitHub Pages
+```bash
+npm run build
+```
 
-This project must be deployed from the GitHub Actions artifact, not directly
-from the repository root.
+The production frontend output is written to `dist/`.
 
-1. In GitHub, open `Settings > Pages`.
-2. Set `Build and deployment > Source` to `GitHub Actions`.
-3. Push to `main`; `.github/workflows/deploy.yml` builds the app and publishes
-   the `dist` folder.
+## Deployment
 
-If Pages serves the repository root instead of `dist`, the browser will try to
-load `src/main.tsx` directly and fail with a module MIME type error.
+The public frontend is deployed on Vercel.
+
+Production URL: https://chunk-diary.vercel.app
+
+The legacy GitHub Pages deployment has been retired. Backend migration and cloud database work are intentionally deferred to the next development phase.
