@@ -1,1 +1,27 @@
-Nothing should be ignored since the changes only include source code files (.tsx) and no build artifacts, dependencies, or temporary files.
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-server/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local logs / tooling
+*.log
+.vercel/
+.DS_Store
+coverage/
+
+# Local development certificates
+certs/
+*.pfx
+*.p12
+*.key
+*.cer
+
+# Never publish backend source as a public asset
+/public/code.gs

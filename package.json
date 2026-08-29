@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "build": "vite build",
     "build:gh": "vite build",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
+    "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist-server/server.cjs",
+    "build:full": "npm run build && npm run build:server",
+    "start": "node dist-server/server.cjs",
+    "clean": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-server']) fs.rmSync(p,{recursive:true,force:true});\"",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
