@@ -431,13 +431,21 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       return;
     }
 
-    setIsGenerating(true);
     const diaryContent = sentences.join("\n");
     if (diaryContent.length > MAX_DIARY_CONTENT_LENGTH) {
-      setIsGenerating(false);
       alert(`Tổng nội dung vượt quá ${MAX_DIARY_CONTENT_LENGTH} ký tự. Hãy tạo chunks theo từng phần.`);
       return;
     }
+    // AI_PROCESSING is not cloud backup or corpus sharing. This user action
+    // authorizes one transient generation request; consent is never inferred
+    // for persistent cloud storage from pressing Generate.
+    const accepted = window.confirm(
+      "Nội dung nhật ký này sẽ được gửi tới dịch vụ AI bên thứ ba để tạo chunks. " +
+      "Đây không phải là bật sao lưu hay chia sẻ dữ liệu học. " +
+      "Bạn có đồng ý xử lý nội dung cho yêu cầu này?"
+    );
+    if (!accepted) return;
+    setIsGenerating(true);
     let activeSession: StorySession | null = null;
 
     try {
