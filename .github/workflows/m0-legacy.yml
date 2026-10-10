@@ -1,13 +1,16 @@
-name: M0 Legacy Data Compatibility
+name: M0-M1 Legacy Snapshot Integrity
 
 on:
   push:
     branches: [codex/supabase-app]
     paths:
       - 'src/db/legacyCompatibility.ts'
+      - 'src/db/legacySnapshot.ts'
       - 'tests/legacy-compat.test.ts'
+      - 'tests/legacy-snapshot.test.ts'
       - 'tests/fixtures/beta-v4.fixture.json'
       - 'docs/contracts/BETA_DATA_V4.md'
+      - 'docs/contracts/BETA_BACKUP_V1.md'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/m0-legacy.yml'
@@ -28,7 +31,9 @@ jobs:
           cache: npm
       - name: Install lockfile dependencies
         run: npm ci
+      - name: Install pinned IndexedDB test emulator (no package-lock mutation)
+        run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5
       - name: Type-check project
         run: npm run lint
-      - name: Run beta-v4 regression + negative controls
+      - name: Run beta-v4 + real IndexedDB emulator regression / negative controls
         run: npm run test:legacy
