@@ -32,7 +32,7 @@ test("M6: local beta default; accounts A and B never share identical record IDs 
   assert.equal(await initializeWorkspaceRouting(async () => { verified++; return null; },storage), null);
   assert.equal(verified, 0, "No account preference must not silently sign in");
   assert.equal(activeWorkspaceDatabaseName(), "LanguageChunkDiaryDB");
-  const baseline = { id: "same-id", createdAt: new Date().toISOString(), nativeText: "LOCAL BETA" };
+  const baseline = { id: "same-id", createdAt: new Date().toISOString(), title: "Local", content: "LOCAL BETA" };
   await saveDiary(baseline as never);
   assert.equal((await getDiaries()).length, 1);
 
@@ -45,11 +45,11 @@ test("M6: local beta default; accounts A and B never share identical record IDs 
   assert.equal(activeWorkspaceOwner()?.userId, A);
   assert.match(activeWorkspaceDatabaseName(), /account-aaaaaaaa/);
   assert.equal((await getDiaries()).length, 0, "Account A must not read beta");
-  await saveDiary({ ...baseline, nativeText:"ACCOUNT A" } as never);
+  await saveDiary({ ...baseline, content:"ACCOUNT A" } as never);
   await saveChunk({ id:"same-chunk", text:"A", meaning:"owner A" } as never);
   await saveSettings({ nickname:"Owner A", nativeLanguage:"English",
     learningLanguages:["Japanese"], learningPurpose:"hobby", onboarded:true });
-  await saveSession({ id:"active", messages:[{content:"A"}] } as never);
+  await saveSession({ id:"active", status:"unfinished", createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), messages:[] } as never);
   assert.equal(workspaceLocalKey("story_chat_settings").includes(A),true);
 
   await chooseAccountWorkspace(B, verifier(B), storage);
@@ -57,22 +57,22 @@ test("M6: local beta default; accounts A and B never share identical record IDs 
   assert.equal((await getChunks()).length, 0, "Account B must not see A chunks");
   assert.equal(await getSettings(), null, "Account B must not see A settings");
   assert.equal(await getActiveSession(), null, "Account B must not see A StoryChat");
-  await saveDiary({ ...baseline, nativeText:"ACCOUNT B" } as never);
+  await saveDiary({ ...baseline, content:"ACCOUNT B" } as never);
   await saveChunk({ id:"same-chunk", text:"B", meaning:"owner B" } as never);
-  await saveSession({ id:"active", messages:[{content:"B"}] } as never);
+  await saveSession({ id:"active", status:"completed", createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), messages:[] } as never);
 
   // Returning to A must expose only A's own stores even with the SAME IDs.
   await chooseAccountWorkspace(A, verifier(A), storage);
-  assert.equal((await getDiaries())[0]?.nativeText, "ACCOUNT A");
+  assert.equal((await getDiaries())[0]?.content, "ACCOUNT A");
   assert.equal((await getChunks())[0]?.meaning, "owner A");
   assert.equal((await getSettings())?.nickname, "Owner A");
-  assert.equal((await getActiveSession() as any)?.messages?.[0]?.content,"A");
+  assert.equal((await getActiveSession())?.status,"unfinished");
   assert.equal(workspaceLocalKey("story_chat_settings").includes(B), false);
 
   chooseLocalWorkspace(storage);
   assert.equal(activeWorkspaceOwner(),null);
   assert.equal(activeWorkspaceDatabaseName(),"LanguageChunkDiaryDB");
-  assert.equal((await getDiaries())[0]?.nativeText, "LOCAL BETA");
+  assert.equal((await getDiaries())[0]?.content, "LOCAL BETA");
   assert.equal((await getChunks()).length,0);
   assert.equal(selectedWorkspaceUser(storage),null);
 });
