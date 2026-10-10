@@ -50,6 +50,8 @@ jobs:
         run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5 playwright@1.56.1
       - name: Type check
         run: npm run lint
+      - name: Build browser app
+        run: npm run build
       - name: IndexedDB regression and negative controls
         run: node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts
       - name: Install headless Chromium
