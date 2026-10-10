@@ -22,6 +22,6 @@ Status: **development / not accepted for production** (2026-10-10).
 ## Remaining gates
 
 - Live linked Google/email Auth with real redirects and two-device recovery; consent and queued retry after switching/expired tokens; offline mobile Safari/Chrome QA.
-- Independent security review of existing `public.chunkdiary_snapshot_cas_write` elevated function. Supabase Advisor still reports 0029; proposed private-schema refactor is **not applied**. Its SQL lives under `docs/proposals`, not live migration history.
-- Migration history in staging includes versions 20261010142026, 20261010142312 and 20261010142447 not yet reconstructed in Git. Do **not** use `supabase db push` until reconciled.
+- **Database security remediation applied and verified:** public snapshot API uses `SECURITY INVOKER`, private helper uses `SECURITY DEFINER`, anonymous cannot call it, RLS and CAS rollback test PASSED. Supabase Advisor reports **zero WARN/ERROR**; two private quota-table INFO notices are intentional.
+- **Database migration history reconciled:** seven versioned SQL files in `supabase/migrations/` match all seven applied Supabase versions **byte-for-byte**, including operator-applied private CAS remediation recorded as migration version `20261010191845`. CI now checks version/name and security invariants; environment parity still requires independent clean-project replay at M8.
 - M6, M7 and M8 remain OPEN. No direct replacement, release or main merge.
