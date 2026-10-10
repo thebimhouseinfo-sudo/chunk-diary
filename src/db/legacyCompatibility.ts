@@ -165,10 +165,25 @@ export function inspectLegacySnapshot(snapshot: unknown): LegacyInspection {
 
 /** Canonical, read-only digest for before/after comparisons of test/consented snapshots. */
 export async function fingerprintLegacySnapshot(snapshot: LegacySnapshot): Promise<string> {
+  // JSON silently drops undefined/function/symbol fields and converts Date/NaN.
+  // Fail closed instead of creating an unchanged fingerprint after silent data loss.
+  // M1 must define a structured-clone-safe export encoding before handling such data.
+  const visiting = new WeakSet<object>();
   const sortObjectKeys = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(sortObjectKeys);
-    if (!isObject(value)) return value;
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObjectKeys(value[key])]));
+    if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "object") throw new TypeError("Snapshot contains non-JSON-safe data");
+    if (visiting.has(value)) throw new TypeError("Snapshot contains a circular reference");
+    visiting.add(value);
+    try {
+      if (Array.isArray(value)) return value.map(sortObjectKeys);
+      if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+        throw new TypeError("Snapshot contains structured-clone data not representable in JSON");
+      }
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObjectKeys((value as Record<string, unknown>)[key])]));
+    } finally {
+      visiting.delete(value);
+    }
   };
   const canonical = {
     ...snapshot,
