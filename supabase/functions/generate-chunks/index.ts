@@ -14,7 +14,7 @@ const cors = {
 const maxDiaryCharacters = 12000;
 const maxGroups = 80;
 const maxUnits = 40;
-const allowedLanguages = new Set(["vi", "en", "zh", "ja", "ko", "es", "fr"]);
+const allowedLanguages = new Set(["vi", "en", "zh", "ja", "ko", "es", "fr", "de", "it"]);
 
 type ErrorCode = "INVALID_REQUEST" | "AUTH_REQUIRED" | "RATE_LIMITED" |
   "PAYLOAD_TOO_LARGE" | "CONFIGURATION_ERROR" | "INVALID_MODEL_OUTPUT" |
@@ -38,6 +38,7 @@ function cleanLang(raw: unknown): string {
   const aliases: Record<string, string> = {
     vietnamese: "vi-VN", english: "en-US", chinese: "zh-CN", mandarin: "zh-CN",
     japanese: "ja-JP", korean: "ko-KR", spanish: "es-ES", french: "fr-FR",
+    german: "de-DE", italian: "it-IT",
   };
   const canonical = Intl.getCanonicalLocales(aliases[name] ?? raw.trim().replace(/_/g, "-"))[0];
   if (!canonical || !allowedLanguages.has(canonical.split("-")[0])) throw new Error("unsupported locale");
@@ -45,7 +46,8 @@ function cleanLang(raw: unknown): string {
 }
 function validateRequest(body: unknown) {
   if (!record(body) || body.contractVersion !== "2" ||
-      typeof body.requestId !== "string" || !/^[a-f0-9-]{30,45}$/i.test(body.requestId)) {
+      typeof body.requestId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.requestId)) {
     throw new Error("invalid contract");
   }
   if (typeof body.diaryContent !== "string" || !body.diaryContent.trim() ||
@@ -54,7 +56,8 @@ function validateRequest(body: unknown) {
   if (!Array.isArray(groups) || groups.length > maxGroups ||
       groups.some((g) => !record(g) || typeof g.id !== "string" ||
         typeof g.canonicalMeaning !== "string" ||
-        g.canonicalMeaning.length > 500)) throw new Error("invalid groups");
+        g.canonicalMeaning.length > 500 || !g.canonicalMeaning.trim() ||
+        g.id.length > 255 || !g.id.trim())) throw new Error("invalid groups");
   const allowedText = (value: unknown, max: number): string =>
     typeof value === "string" && value.length <= max ? value : "";
   return {
@@ -71,11 +74,14 @@ function validateRequest(body: unknown) {
     })),
   };
 }
-function validateResponse(raw: unknown, sourceLanguage: string, targetLanguage: string): Record<string, unknown> {
+function validateResponse(
+  raw: unknown, sourceLanguage: string, targetLanguage: string, knownGroupIds: readonly string[],
+): Record<string, unknown> {
   if (!record(raw) || raw.contractVersion !== "2" ||
       !Array.isArray(raw.semanticUnits) || !raw.semanticUnits.length ||
       raw.semanticUnits.length > maxUnits) throw new Error("invalid response envelope");
   const usedOrders = new Set<number>();
+  const validGroups = new Set(knownGroupIds);
   const units = raw.semanticUnits.map((unit) => {
     if (!record(unit) || !Number.isInteger(unit.order) || Number(unit.order) < 1 ||
         usedOrders.has(Number(unit.order)) || typeof unit.sourceText !== "string" ||
@@ -87,10 +93,14 @@ function validateResponse(raw: unknown, sourceLanguage: string, targetLanguage: 
         if (!record(chunk) || typeof chunk.targetText !== "string" || !chunk.targetText.trim() ||
             typeof chunk.meaning !== "string" || !chunk.meaning.trim() ||
             chunk.targetText.length > 500 || chunk.meaning.length > 1000 ||
-            (typeof chunk.semanticGroupId !== "string" || !chunk.semanticGroupId) &&
+            (typeof chunk.semanticGroupId !== "string" || !chunk.semanticGroupId.trim()) &&
             (typeof chunk.proposedCanonicalMeaning !== "string" || !chunk.proposedCanonicalMeaning.trim())) {
           throw new Error("invalid chunk");
         }
+        // Never accept a fabricated semantic-group ID: it must have been sent
+        // by this caller. New semantics must supply a proposed meaning instead.
+        const id = typeof chunk.semanticGroupId === "string" ? chunk.semanticGroupId.trim() : "";
+        if (id && !validGroups.has(id)) throw new Error("unknown semantic group");
         return {
           targetText: chunk.targetText.trim(), meaning: chunk.meaning.trim(),
           ipa: typeof chunk.ipa === "string" ? chunk.ipa.slice(0, 200) : "",
@@ -220,16 +230,17 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (Deno.env.get("CHUNKDIARY_AI_ENABLED") !== "true") {
     return failure(503, "CONFIGURATION_ERROR", requestId);
   }
-  const quota = await claimQuota(userId, requestId);
-  if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
-  if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
-
+  // Missing provider configuration must not consume a user's paid-call quota.
+  // Configuration cannot be probed by unauthenticated callers.
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   const privatePrompt = Deno.env.get("CHUNKDIARY_PROMPT_V2");
   const promptVersion = Deno.env.get("CHUNKDIARY_PROMPT_VERSION") || "";
   if (!apiKey || !privatePrompt || !promptVersion) {
     return failure(503, "CONFIGURATION_ERROR", requestId);
   }
+  const quota = await claimQuota(userId, requestId);
+  if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
+  if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -245,7 +256,10 @@ export async function handleRequest(req: Request): Promise<Response> {
       },
     });
     const parsed: unknown = response.text ? JSON.parse(response.text) : null;
-    const result = validateResponse(parsed, input.sourceLanguage, input.targetLanguage);
+    const result = validateResponse(
+      parsed, input.sourceLanguage, input.targetLanguage,
+      input.existingSemanticGroups.map((group) => group.id),
+    );
     return respond(200, {
       success: true, requestId, contractVersion: "2", promptVersion, result,
     });
