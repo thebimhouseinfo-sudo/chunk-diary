@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Sparkles, Mic } from "lucide-react";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../db/userDb";
+import { workspaceLocalKey } from "../../db/workspaceRouter";
 
 interface UserProfileSetupProps {
   show: boolean;
@@ -43,7 +44,7 @@ export default function UserProfileSetup({ show, onCompleted, onRequestMicPermis
       await saveSettings(updatedSettings);
       
       // Đồng thời cập nhật localStorage để đảm bảo các luồng kiểm tra nhanh đồng bộ theo
-      localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
+      localStorage.setItem(workspaceLocalKey("user_settings"), JSON.stringify(updatedSettings));
 
       // Keep onboarding local. Creating a cloud identity / uploading a profile
       // requires a separate, user-approved backup/sync flow.
