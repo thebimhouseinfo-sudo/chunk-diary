@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+functions/node_modules/
+functions/lib/
 
 # Build outputs
 dist/
@@ -12,6 +14,7 @@ dist-server/
 
 # Local logs / tooling
 *.log
+*.local
 .vercel/
 .DS_Store
 coverage/
@@ -25,3 +28,8 @@ certs/
 
 # Never publish backend source as a public asset
 /public/code.gs
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+supabase/functions/.env

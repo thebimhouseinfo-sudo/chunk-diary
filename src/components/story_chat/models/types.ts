@@ -5,6 +5,7 @@ export interface StorySession {
   status: "unfinished" | "completed";
   messages: ChatMessage[];
   summary?: string; // Add optional summary field
+  generationStatus?: "idle" | "pending" | "completed" | "failed";
   createdAt: string;
   updatedAt: string;
 }

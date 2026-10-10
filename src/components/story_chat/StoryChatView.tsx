@@ -8,17 +8,20 @@ import SummaryView from "./components/SummaryView";
 import SettingsModal from "./components/SettingsModal";
 import UserProfileSetup from "../profile/UserProfileSetup";
 import { ChatMessage, ChatbotWorkflow } from "./workflow/chatbotWorkflow";
-import { StorySettings } from "./models/types";
+import { StorySettings, StorySession } from "./models/types";
 import { StoryService } from "./servises/storyService";
 import { useIdleTimer } from "./hooks/useIdleTimer";
-import { callGenerateChunks } from "../../utils/aiService";
+import { callGenerateChunks, MAX_DIARY_CONTENT_LENGTH } from "../../utils/aiService";
 import { UserSettings, Chunk, MeaningUnit } from "../../types";
+import { saveMeaningUnitsAndChunks } from "../../db/indexedDb";
 import { getSettings } from "../../db/userDb";
 import { speakText } from "../../utils/tts";
 import { Sparkles, MessageSquare, History, BookOpen, Volume2, Play, ArrowRight } from "lucide-react";
 import { useMicPermission } from "../../hooks/useMicPermission";
 import { saveEnglishChunk } from "../../db/englishChunkDb";
 import { saveUserTargetProgress } from "../../db/userProgressDb";
+import { cloudSync } from "../../services/storage/cloudSyncAdapter";
+import { MAX_STORY_MESSAGE_LENGTH } from "./constants";
 
 async function getDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -321,7 +324,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
 
   const handleTranscriptionEnd = (text: string) => {
     if (text) {
-      setDraftText(text);
+      setDraftText(text.slice(0, MAX_STORY_MESSAGE_LENGTH));
       setIsReviewMode(true);
     } else {
       resetTimers();
@@ -335,29 +338,24 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   };
 
   const handleSendDraft = async (text: string) => {
+    const normalizedText = text.trim();
+    if (!normalizedText || normalizedText.length > MAX_STORY_MESSAGE_LENGTH) {
+      alert(`Mỗi lần gửi chỉ được tối đa ${MAX_STORY_MESSAGE_LENGTH} ký tự.`);
+      return;
+    }
+
     const randomSuffix = () => Math.random().toString(36).substring(2, 9);
     const userMsg: ChatMessage = {
       id: "msg-user-" + Date.now() + "-" + randomSuffix(),
       sender: "user",
-      text: text,
+      text: normalizedText,
       createdAt: new Date().toISOString()
     };
 
     const updatedMessages = [...messages, userMsg];
     const userMsgCount = updatedMessages.filter(m => m.sender === "user").length;
 
-    const sentenceCount = text.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
-    const isTooLong = sentenceCount >= 3;
-
-    if (isTooLong) {
-      const warningMsg: ChatMessage = {
-        id: "msg-warn-" + Date.now() + "-" + randomSuffix(),
-        sender: "bot",
-        text: ChatbotWorkflow.getTooLongWarning(),
-        createdAt: new Date().toISOString()
-      };
-      updatedMessages.push(warningMsg);
-    } else if (userMsgCount >= 50 && !hasRecommended) {
+    if (userMsgCount >= 50 && !hasRecommended) {
       const recMsg: ChatMessage = {
         id: "msg-rec-" + Date.now() + "-" + randomSuffix(),
         sender: "bot",
@@ -436,9 +434,23 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
 
     setIsGenerating(true);
     const diaryContent = sentences.join("\n");
+    if (diaryContent.length > MAX_DIARY_CONTENT_LENGTH) {
+      setIsGenerating(false);
+      alert(`Tổng nội dung vượt quá ${MAX_DIARY_CONTENT_LENGTH} ký tự. Hãy tạo chunks theo từng phần.`);
+      return;
+    }
+    let activeSession: StorySession | null = null;
 
     try {
-      const db = await getDb();
+      activeSession = await StoryService.getActiveSession();
+      if (activeSession) {
+        await StoryService.saveSession({
+          ...activeSession,
+          generationStatus: "pending",
+          updatedAt: new Date().toISOString()
+        });
+      }
+
       let userSettings = {
         nativeLanguage: "vi",
         learningLanguages: ["en"],
@@ -482,34 +494,33 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         createdAt: new Date().toISOString()
       });
 
-      // Saving chunks logic
-      const txMU = db.transaction(["meaningUnits", "chunks"], "readwrite");
-      const storeMU = txMU.objectStore("meaningUnits");
-      const storeChunks = txMU.objectStore("chunks");
-
+      // Build all records before opening the transaction. IndexedDB may close a
+      // transaction when an awaited request yields back to the event loop.
+      const meaningUnits: MeaningUnit[] = [];
       const createdChunksList: Chunk[] = [];
+      const auxiliaryWrites: Promise<unknown>[] = [];
 
       if (apiResponse && apiResponse.semanticUnits) {
         for (const unit of apiResponse.semanticUnits) {
-          const muId = await new Promise<string>((resolve, reject) => {
-            const req = storeMU.add({
-              id: crypto.randomUUID(),
-              diaryId: savedDiaryId,
-              nativeText: unit.nativeText,
-              englishPivot: unit.englishText,
-              order: unit.order
-            });
-            req.onsuccess = () => resolve(req.result as string);
-            req.onerror = () => reject(req.error);
+          const muId = crypto.randomUUID();
+          meaningUnits.push({
+            id: muId,
+            diaryId: savedDiaryId,
+            nativeText: unit.nativeText,
+            englishPivot: unit.englishText,
+            order: unit.order
           });
 
-          const allChunks = [...unit.commonChunks, ...unit.personalizedChunks];
-          for (const rawChunk of allChunks) {
-            const chunkType: "common" | "personalized" = unit.commonChunks.includes(rawChunk as any) ? "common" : "personalized";
+          const allChunks = [
+            ...unit.commonChunks.map((rawChunk) => ({ rawChunk, chunkType: "common" as const })),
+            ...unit.personalizedChunks.map((rawChunk) => ({ rawChunk, chunkType: "personalized" as const }))
+          ];
+          for (const { rawChunk, chunkType } of allChunks) {
             const now = new Date().toISOString();
             const newChunk: Chunk = {
               id: crypto.randomUUID(),
               meaningUnitId: muId,
+              semanticGroupId: rawChunk.semanticGroupId || undefined,
               language: targetLang,
               text: rawChunk.text,
               meaning: rawChunk.meaning || unit.nativeText || "",
@@ -530,22 +541,14 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               subSpecialty: userSettings.subSpecialty,
               updatedAt: now
             };
-            
-            await new Promise<void>((resolve, reject) => {
-              const req = storeChunks.add(newChunk);
-              req.onsuccess = () => {
-                createdChunksList.push(newChunk);
-                resolve();
-              };
-              req.onerror = () => reject(req.error);
-            });
+            createdChunksList.push(newChunk);
 
             // --- Background save to englishChunkDb (English pivot for commercial packaging & merge) ---
             // Case 1: Learning non-English → rawChunk.english is the English pivot
             // Case 2: Learning English → the target chunk IS the English chunk
             const englishText = rawChunk.english || rawChunk.text;
             if (englishText) {
-              saveEnglishChunk({
+              auxiliaryWrites.push(saveEnglishChunk({
                 id: crypto.randomUUID(),
                 text: englishText,
                 meaning: unit.nativeText || "",
@@ -555,11 +558,11 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
                 subSpecialty: userSettings.subSpecialty,
                 createdAt: now,
                 updatedAt: now
-              }).catch(err => console.warn("[englishChunkDb] Failed to save English chunk:", err));
+              }).catch(err => console.warn("[englishChunkDb] Failed to save English chunk:", err)));
             }
 
             // --- Background save to userProgressDb (Tiếng mẹ đẻ + Target Chunk + Stats for Restore) ---
-            saveUserTargetProgress({
+            auxiliaryWrites.push(saveUserTargetProgress({
               id: crypto.randomUUID(),
               nativeText: unit.nativeText || "",
               targetLanguage: targetLang,
@@ -580,15 +583,29 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               createdAt: now,
               updatedAt: now,
               syncStatus: "pending_sync"
-            }).catch(err => console.warn("[userProgressDb] Failed to save user progress:", err));
+            }).catch(err => console.warn("[userProgressDb] Failed to save user progress:", err)));
           }
         }
       }
 
+      await saveMeaningUnitsAndChunks(meaningUnits, createdChunksList);
+      await Promise.allSettled(auxiliaryWrites);
+
       await StoryService.clearActiveSession();
+      if (createdChunksList.length > 0 && cloudSync.syncGeneratedChunks) {
+        cloudSync.syncGeneratedChunks(createdChunksList).catch(err => console.warn("[CloudSyncAdapter] Failed to sync generated chunk corpus:", err));
+        cloudSync.syncUserProgress().catch(err => console.warn("[CloudSyncAdapter] Failed to sync user progress:", err));
+      }
       setGeneratedChunks(createdChunksList);
     } catch (e) {
       console.error(e);
+      if (activeSession) {
+        await StoryService.saveSession({
+          ...activeSession,
+          generationStatus: "failed",
+          updatedAt: new Date().toISOString()
+        }).catch((saveError) => console.warn("Failed to persist generation status:", saveError));
+      }
       alert("Đã xảy ra lỗi khi phân tích và bóc tách chunks. Vui lòng thử lại!");
     } finally {
       setIsGenerating(false);

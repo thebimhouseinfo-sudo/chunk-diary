@@ -1,0 +1,1 @@
+export const MAX_STORY_MESSAGE_LENGTH = 280;

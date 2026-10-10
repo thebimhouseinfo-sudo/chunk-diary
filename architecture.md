@@ -6,14 +6,24 @@ Welcome to the technical architecture documentation for **ChunkDiary**, a modern
 
 ## 1. System Overview & Tech Stack
 
-ChunkDiary is built as a single-page application (SPA) with a lightweight local Express backend serving development assets and proxying AI requests.
+ChunkDiary is built as a local-first single-page application (SPA). The current
+beta still uses Google Apps Script for AI generation. Supabase Free tier is the
+cloud migration target: Supabase Edge Functions for optional AI requests,
+Supabase Auth for guest/account identity, and Postgres tables for opt-in sync.
+The legacy Express backend remains useful for local development and fallback
+experimentation.
 
 *   **Frontend Framework**: React 19, TypeScript (v5.8), Vite (v6), and TailwindCSS (v4).
 *   **Animations & Icons**: Motion (Framer Motion replacement) for page transitions, Lucide React for UI iconography.
-*   **Database**: Client-side **IndexedDB** for local-first, privacy-respecting storage (no cloud user accounts required).
-*   **Backend Server**: Node.js Express server (`server.ts`) written in TypeScript, compiled with `esbuild`. 
+*   **Local Database**: Client-side **IndexedDB** remains the source of truth for diaries, generated chunks, progress, semantic groups, and onboarding profile.
+*   **Cloud Backend Target**: **Supabase** (migration in progress).
+    *   Supabase Edge Function `generate-chunks` will run alongside Google Apps Script before becoming the default.
+    *   Supabase Auth anonymous users provide a technical backend identity for users who have completed the local profile gate.
+    *   Linked accounts (Google/email later) keep the same user identity so users can restore data on another device.
+    *   Supabase Postgres stores cloud profile backup, progress restore payloads, and generated chunk corpus for future bot improvement.
+*   **Legacy Local Backend**: Node.js Express server (`server.ts`) written in TypeScript, compiled with `esbuild`.
     *   Acts as a dev server with Vite middleware in local environment.
-    *   Hosts a sequential AI Proxy `/api/generate-chunks` with multi-model fallback capability.
+    *   Keeps a local `/api/generate-chunks` development path while backend adapters are being unified.
 *   **Speech Services**: Uses standard Web APIs built into modern browsers:
     *   **Speech Recognition**: `webkitSpeechRecognition` / `SpeechRecognition` API.
     *   **Text-to-Speech (TTS)**: `window.speechSynthesis`.
@@ -56,7 +66,7 @@ chunk-diary/
     │   ├── indexedDb.ts            # IndexedDB manager, store definitions, CRUD actions
     │   └── userDb.ts               # Sub-helpers for user settings persistence
     └── utils/               # Shared utilities
-        ├── aiService.ts            # Google Apps Script primary LLM connector
+        ├── aiService.ts            # AI adapter entry point (Apps Script/Supabase transition)
         ├── browser.ts              # Browser runtime detection helpers
         ├── speech.ts               # Pronunciation scoring and speech recognition setup
         └── tts.ts                  # SpeechSynthesis (text-to-speech) wrappers
@@ -64,9 +74,11 @@ chunk-diary/
 
 ---
 
-## 3. Database Schema (IndexedDB)
+## 3. Data Model
 
-The database utilizes client-side **IndexedDB** with five primary object stores:
+### 3.1 IndexedDB Local Schema
+
+The database utilizes client-side **IndexedDB** with local-first object stores:
 
 ```mermaid
 erDiagram
@@ -124,23 +136,68 @@ erDiagram
 *   **`meaningUnits`**: Stores sentences/ideas extracted from diaries. Acts as the intermediate link.
 *   **`chunks`**: Extracted linguistic chunks (collocations, words, phrases) mapping to a specific meaning unit, complete with review history, stars, and pronunciation scores.
 *   **`semanticGroups`**: Classifies related chunks across different diaries into canonical meanings to build a personal semantic vocabulary library.
-*   **`settings`**: Key-value pair configuration for user onboarding data, preferred native and target languages, CEFR level, target hobbies/professions, and API keys.
+*   **`settings`**: Key-value pair configuration for mandatory local onboarding data, preferred native and target languages, CEFR level, target hobbies/professions, and future account-link status.
+*   **`englishChunks`**: Local central bank of English pivot chunks used for deduplication, domain packaging, and future curated datasets.
+*   **`userProgress`**: Local restore payload for target chunks and practice stats. This is synced to cloud when Supabase is configured.
+
+### 3.2 Supabase Cloud Schema
+
+Defined in `supabase/migrations/202607270001_cloud_sync.sql`.
+
+*   **`user_settings`**: One JSON profile/settings document per Supabase `auth.users.id`.
+*   **`user_progress`**: Per-user restore records for target chunks and practice statistics.
+*   **`sync_snapshots`**: Reserved for coarse full-device backup snapshots.
+*   **`generated_chunk_corpus`**: Corpus table for chunks users generate. This supports product analytics, chunk quality review, and future bot improvement/training workflows.
+
+Security model:
+
+*   Row Level Security is enabled on all user data tables.
+*   Users can read/write only rows where `user_id = auth.uid()`.
+*   Anonymous Supabase users are allowed so beta users can sync data before linking a permanent account.
+*   When a user later links Google/email, the same Supabase user identity should continue owning the already-synced data.
 
 ---
 
 ## 4. AI & Chunk Generation Pipelines
 
-To process a diary, the application splits the narrative into sentences, translates them, and extracts phonetic chunks. It supports two pipelines:
+To process a diary, the application joins the user's story sentences, sends the result to an authenticated backend, translates semantic units, and extracts phonetic chunks.
 
-### Pipeline A: Cloud-Based Apps Script Endpoint (Primary)
-By default, `src/utils/aiService.ts` makes a request to a designated **Google Apps Script web app endpoint**.
-*   **Input**: The diary content, native language, target languages, CEFR level, profile context, and existing semantic groups.
-*   **Action**: Apps Script coordinates language translation, chunks parsing, IPA retrieval, and returns an unified response.
+### Pipeline A: Google Apps Script (Current Beta Production)
 
-### Pipeline B: Local Sequentially-Handled LLM Proxy (Fallback & Custom Keys)
-If the primary endpoint is unavailable, or if the user configures custom keys, the request goes to the `/api/generate-chunks` endpoint on the Express server (`server.ts`).
-*   **Multi-Model Sequential Fallback**: The server tries models in a configured fallback order (e.g. Gemini `gemini-3.5-flash` -> `gemini-3.1-flash-lite`, or OpenAI, or xAI depending on settings).
-*   **Schema Enforcement**: Responses are validated against strict JSON schemas configured via `@google/genai` or standard OpenAI structural APIs.
+Google Apps Script remains the current production AI backend for the small web
+beta. Its legacy request/response shape must be wrapped by the canonical AI
+adapter described in `docs/ai/api-contract.md`.
+
+### Pipeline B: Supabase Edge Function (Migration Target)
+
+The migration should resolve the backend through an adapter/feature flag rather
+than coupling React components to one endpoint. The intended order during the
+transition is:
+
+1. The configured beta backend, currently Google Apps Script.
+2. Supabase Edge Function for internal or opted-in users.
+3. A local mock/development adapter for tests.
+
+The Supabase function lives at `supabase/functions/generate-chunks/index.ts`.
+
+*   **Auth Gate**: The frontend requires local `settings.onboarded` before generating chunks. When Supabase is configured, it creates/uses an anonymous Supabase session and sends `Authorization: Bearer <access_token>`.
+*   **Backend Gate**: Supabase `config.toml` has `verify_jwt = true`, and the function also rejects missing bearer tokens.
+*   **Secret Handling**: `GEMINI_API_KEY` is stored as a Supabase Edge Function secret, never in frontend code.
+*   **Response Contract**: New backends should return the canonical object response
+    documented in `docs/ai/api-contract.md`. A temporary adapter may parse the
+    legacy JSON-string response during migration.
+
+### Pipeline C: Local Express/Mock Development Backend
+
+The Express server and mock adapter are development tools. They must implement the
+same canonical contract and must not silently use a different request shape.
+
+*   Useful for local experiments and custom provider fallback.
+*   Should not be the long-term production path for the beta cloud backend.
+
+Google Apps Script will remain available until Supabase generation, fallback,
+cloud sync, and account linking have passed beta release gates. See
+`docs/ai/implementation-plan.md` for the staged migration plan.
 
 ---
 
@@ -198,3 +255,94 @@ The **Story Chat** module replaces traditional diary writing with a voice-guided
        ▼
 [AI Chunk Extraction] ──► Parse & write to IndexedDB ──► [Go to Chunks Library]
 ```
+
+
+---
+
+## 7. Current Backend Migration Plan
+
+### Product Rules
+
+*   The user must create a local learner profile before using the app.
+*   The profile defines the learning domain: native language, target language, CEFR, learning purpose, specialty, and sub-specialty.
+*   This profile is not optional because ChunkDiary is designed for immediately usable communication chunks, not generic vocabulary drills.
+*   Anonymous Supabase identity is acceptable for beta sync and corpus collection.
+*   Account linking later should preserve the same synced data so users can change devices and restore progress.
+*   Web beta monetization is not a priority. AdSense is not attractive for this product. AdMob is deferred until a Capacitor/native mobile app phase.
+
+### Target Architecture
+
+```
+React/Vite SPA
+  | local-first reads/writes
+  v
+IndexedDB
+  | AI request requires local profile
+  v
+Supabase Auth anonymous session
+  | bearer token
+  v
+Supabase Edge Function generate-chunks
+  | GEMINI_API_KEY secret
+  v
+Gemini API
+
+After generation:
+  IndexedDB chunks/progress
+  Supabase user_progress
+  Supabase generated_chunk_corpus
+```
+
+### Implementation Task List
+
+Done:
+
+*   Removed the hardcoded Google Apps Script endpoint from `src/utils/aiService.ts`.
+*   Added Supabase endpoint resolution via `VITE_SUPABASE_URL` / `VITE_GENERATE_CHUNKS_ENDPOINT`.
+*   Added `@supabase/supabase-js` dependency.
+*   Added `src/services/supabase/client.ts` with anonymous session creation and future link helpers.
+*   Added `src/services/supabase/cloudSync.ts` for profile, progress, restore, and generated chunk corpus sync.
+*   Updated `src/services/storage/cloudSyncAdapter.ts` to call real Supabase sync helpers.
+*   Updated onboarding (`UserProfileSetup.tsx`) to create a Supabase anonymous session and sync profile after local profile creation when Supabase is configured.
+*   Updated story chunk generation (`StoryChatView.tsx`) to sync generated chunks to corpus and sync progress after local save.
+*   Added Supabase Edge Function at `supabase/functions/generate-chunks/index.ts`.
+*   Added Supabase migration at `supabase/migrations/202607270001_cloud_sync.sql`.
+*   Added RLS policies for user-owned cloud data.
+*   Added `generated_chunk_corpus` table for future bot improvement/training datasets.
+*   Added `src/vite-env.d.ts` for Vite env typing.
+*   Updated `.env.example` with Supabase env vars.
+*   Updated `tsconfig.json` to exclude Supabase Deno functions from root app typecheck.
+*   Verified `npm run lint` passes.
+
+Pending:
+
+*   Create or select the Supabase project.
+*   Enable Supabase Auth anonymous sign-ins in the Dashboard.
+*   Enable manual identity linking in Supabase Auth settings.
+*   Apply `202607270001_cloud_sync.sql` in Supabase SQL Editor or via Supabase CLI.
+*   Set Supabase Edge Function secrets: `GEMINI_API_KEY` and optionally `GEMINI_MODEL`.
+*   Deploy `generate-chunks` Edge Function.
+*   Create local `.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+*   Test first-run onboarding with Supabase configured.
+*   Test chunk generation against deployed Supabase function.
+*   Verify rows are inserted into `user_settings`, `user_progress`, and `generated_chunk_corpus`.
+*   Add Settings UI for cloud status: guest synced, link Google/email, restore progress, manual sync.
+*   Add privacy/consent copy explaining generated chunks may be synced and used to improve the learning bot.
+*   Decide whether diaries/raw stories should sync. Current implementation syncs chunks/progress, not full diary text as a dedicated cloud table.
+*   Decide deploy host for web beta: Cloudflare Pages/Workers static hosting is still preferred for free beta hosting; Supabase handles backend/data.
+*   Plan Capacitor/native phase for better TTS/STT, persistent mic UX, Firebase Analytics/AdMob later.
+
+### Next Start Here
+
+1. Open Supabase Dashboard and create/select a project for ChunkDiary.
+2. In Auth settings, enable anonymous sign-ins and manual linking.
+3. Run the SQL in `supabase/migrations/202607270001_cloud_sync.sql`.
+4. Add Edge Function secret `GEMINI_API_KEY`.
+5. Deploy `supabase/functions/generate-chunks`.
+6. Fill `.env` from `.env.example`.
+7. Run `npm run lint`, then start the app and test the full path:
+   local onboarding -> anonymous session -> chunk generation -> local save -> cloud corpus/progress sync.
+
+### Known Local Issue
+
+`npm run build` previously failed on this Windows workspace because `node_modules/esbuild/bin/esbuild` was a Linux ELF binary. `npm run lint` passes. If a production build is needed, reinstall dependencies cleanly on Windows or delete `node_modules` and run `npm install` from a normal PowerShell before building.

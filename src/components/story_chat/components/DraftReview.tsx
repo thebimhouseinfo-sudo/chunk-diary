@@ -1,5 +1,6 @@
 import React from "react";
 import { Send, X, Edit3, Sparkles } from "lucide-react";
+import { MAX_STORY_MESSAGE_LENGTH } from "../constants";
 
 interface DraftReviewProps {
   draftText: string;
@@ -9,8 +10,7 @@ interface DraftReviewProps {
 }
 
 export default function DraftReview({ draftText, onChange, onDelete, onSend }: DraftReviewProps) {
-  const sentenceCount = draftText.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
-  const isTooLong = sentenceCount >= 3;
+  const isTooLong = draftText.length > MAX_STORY_MESSAGE_LENGTH;
 
   return (
     <div className="p-4 sm:p-5 bg-slate-50/80 rounded-2xl border border-slate-150/80 space-y-3 animate-pageFadeIn">
@@ -26,9 +26,9 @@ export default function DraftReview({ draftText, onChange, onDelete, onSend }: D
         </button>
 
         {/* Right: 'Gửi' button placed at the top-right */}
-        <button
-          onClick={() => onSend(draftText)}
-          disabled={!draftText.trim()}
+          <button
+            onClick={() => onSend(draftText)}
+            disabled={!draftText.trim() || isTooLong}
           className="flex items-center gap-1.5 px-4 py-2 bg-vibrant-indigo hover:bg-vibrant-indigo/95 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm hover:shadow cursor-pointer border-none"
           title="Gửi câu"
         >
@@ -44,6 +44,7 @@ export default function DraftReview({ draftText, onChange, onDelete, onSend }: D
           <textarea
             value={draftText}
             onChange={(e) => onChange(e.target.value)}
+            maxLength={MAX_STORY_MESSAGE_LENGTH}
             placeholder="Chỉnh sửa lời nói của bạn ở đây..."
             rows={3}
             className="w-full text-sm text-slate-800 font-semibold leading-relaxed bg-transparent border-none outline-none resize-none p-0 focus:ring-0"
@@ -52,13 +53,13 @@ export default function DraftReview({ draftText, onChange, onDelete, onSend }: D
         
         {isTooLong && (
           <div className="absolute bottom-2 left-3 text-[10px] text-vibrant-coral font-bold flex items-center gap-1 animate-pulse">
-            ⚠️ Câu hơi dài ({sentenceCount} câu), chia ngắn hơn để tạo chunks chuẩn nhất!
+            Câu vượt quá {MAX_STORY_MESSAGE_LENGTH} ký tự, hãy chia nhỏ hơn.
           </div>
         )}
 
         <div className="absolute bottom-2 right-3 text-[9px] text-slate-400 font-bold flex items-center gap-1 select-none pointer-events-none">
           <Sparkles size={10} className="text-vibrant-indigo animate-pulse" />
-          Nhấn để chỉnh sửa trực tiếp
+          {draftText.length}/{MAX_STORY_MESSAGE_LENGTH}
         </div>
       </div>
     </div>

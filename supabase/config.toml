@@ -1,0 +1,4 @@
+project_id = "chunk-diary"
+
+[functions.generate-chunks]
+verify_jwt = true

@@ -1,0 +1,227 @@
+// ==========================================
+// CẤU HÌNH HỆ THỐNG TỰ ĐỘNG LẤY TỪ SCRIPT PROPERTIES
+// ==========================================
+const GEMINI_API_KEY = PropertiesService.getScriptProperties().getProperty("API");
+const GEMINI_MODEL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+/**
+ * API Endpoint chính nhận request POST từ Frontend ngoài (GitHub Pages)
+ */
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const action = data.action;
+
+    if (!GEMINI_API_KEY) {
+      return createResponse({ success: false, error: "Chưa cấu hình API Key trong Script Properties với key là 'API'." });
+    }
+
+    if (action === "generateChunks") {
+      const { diaryContent, nativeLanguage, targetLanguage, cefrLevel, profileContext, existingSemanticGroups } = data;
+
+      if (!diaryContent) {
+        return createResponse({ success: false, error: "Thiếu nội dung nhật ký." });
+      }
+
+      // Xây dựng prompt
+      let existingGroupsContext = "";
+      if (existingSemanticGroups && existingSemanticGroups.length > 0) {
+        existingGroupsContext = `\n## Existing Semantic Groups in User Library
+When generating chunks, you MUST check if a chunk matches any existing Semantic Group below.
+If its core meaning is highly similar to an existing group, assign that group's ID to "semanticGroupId".
+If it represents a completely new idea, set "semanticGroupId" to "new" and provide a "proposedCanonicalMeaning" for it.
+Be conservative here too: only reuse an existing group's ID when you are confident the core meaning genuinely matches. Do NOT force-fit a chunk into an existing group just to avoid creating a new one, and do NOT stretch a loose thematic similarity into a match — when uncertain, prefer "new" over a wrong match.\n
+${existingSemanticGroups.map(g => `- ID: "${g.id}", Meaning: "${g.canonicalMeaning}"`).join("\n")}\n`;
+      }
+
+      const prompt = `You are an expert language teacher specializing in chunk-based sentence learning. You are extremely careful never to invent or hallucinate facts, details, or terminology that are not actually present in the source material given to you.
+
+## Context
+- Native Language (Language 1): ${nativeLanguage || "Vietnamese"}
+- Target Language (Language 2): ${targetLanguage || "English"}
+- CEFR Level: ${cefrLevel || "A2"}
+- User Profile: ${profileContext || "General learner"}
+
+## Diary Content (written in ${nativeLanguage || "Vietnamese"}):
+"${diaryContent}"
+
+## Processing Instructions
+
+### Step 1: Understand
+Read the entire diary in ${nativeLanguage || "Vietnamese"}. Understand the topic, context, emotions, and meaning. Do NOT translate word by word. Do NOT add details, numbers, names, causes, or specifics that are not stated or clearly implied by the diary text.
+
+### Step 2: English Narrative
+Rewrite the entire diary as a natural English narrative. English serves as the sole semantic layer. The narrative must stay strictly faithful to what the diary actually says — translate the actual action/idea stated, do not embellish, do not add invented specifics, and do not add implied context the user did not state (no assumed location, method, manner, companion, or reason unless the diary says so).
+
+Example of what NOT to do: if the diary says "Chiều nay tôi học Anh văn" (this afternoon I studied English), do NOT expand it into "I go to English class this afternoon" — the user never said they went anywhere or attended a class. The faithful narrative is simply "This afternoon I studied English."
+
+### Step 3: Semantic Units
+Split the English Narrative into Semantic Units. Each Semantic Unit represents one complete idea, grounded only in the diary content.
+- Use sentence boundaries in the original diary as your primary splitting guide: a line break or a period (.) in the Diary Content almost always marks the end of one idea and the start of another — treat each such sentence as its own Semantic Unit rather than merging it with the next one.
+- Coverage must be complete: every idea stated in the diary must end up in some Semantic Unit. Do not silently drop or skip an idea, even a minor one (e.g. a time reference, a feeling, a short remark).
+- If the diary contains 2-3 sentences and they express more than one distinct idea, split them into separate Semantic Units — do not merge multiple distinct ideas into a single unit just because they were written close together. Each unit stays small enough that its single Common Chunk can express it fully without cramming in unrelated content.
+- Only merge two short original sentences into one Semantic Unit if they are truly a single inseparable idea split across a comma-like pause (e.g. one sentence is just a continuation/completion of the previous one's meaning), never merely because they are thematically related.
+
+### Step 4: Generate Chunks
+For each Semantic Unit, generate chunks as follows:
+
+**Common Chunk (exactly 1):**
+- Generate EXACTLY ONE chunk. Never generate more than one.
+- A complete, natural English sentence.
+- Preserves the meaning of the Semantic Unit exactly — do not add or remove information. Translate only what was actually said; do not fill in a plausible-sounding location, method, companion, reason, or detail that the user did not state (e.g. "học Anh văn" = "studied English", NOT "went to English class").
+- A natural spoken/conversational sentence — the kind a real person would actually say out loud in everyday conversation, not literary or written-style prose.
+- CEFR level (${cefrLevel || "A2"}) is a soft, secondary guide only — this method is for spoken communication, not graded writing, so prioritize natural, commonly-used real speech over strictly matching a level. Do not sacrifice naturalness just to hit a CEFR target.
+- Natural, as a native speaker would say it — natural phrasing is about fluency of expression, never a license to add unstated content.
+
+**Personalized Chunk (0 or 1 — be conservative):**
+- Generate AT MOST ONE chunk. Never generate more than one.
+- The ONLY thing personalization is allowed to change is register/vocabulary — using the correct real-world professional term that someone with the user's stated profession would actually use for this exact action or object in real life. It must NOT add new information, new details, new context, or new facts that are not already in the Semantic Unit.
+- Only generate a personalized chunk if the profession/domain in the User Profile has a well-established, real technical term (a term a practitioner would genuinely use — not invented, not obscure trivia) for the specific action/object/concept in THIS Semantic Unit. If you are not confident such a real term exists and is correct, leave personalizedChunks as an empty array.
+- Do NOT use personalization as an excuse to add invented specifics such as measurements, tool brands, project names, coworker names, causes, or scenarios that are not in the Diary Content. The sentence must remain exactly as true/general as the original — only the word choice becomes more professional/precise.
+- A vague profile with no clear applicable domain term for this specific idea is NOT sufficient grounds to force a personalized chunk. When in doubt, prefer an empty array.
+
+Example (User Profile: "MEP engineer"):
+- Diary idea: "I made a hole in the wall."
+- Common Chunk: "I made a hole in the wall." (plain, general English)
+- Personalized Chunk: "I made a penetration in the wall." (correct, real MEP-industry term for the same exact action — no new facts added, just the professional register)
+Counter-example of what NOT to do: turning this into "I used a core drill to make a 100mm penetration for the HVAC duct riser" — this invents tools, sizes, and context that were never stated, and must be avoided.
+
+### Step 5: Convert to ${targetLanguage || "English"}
+For each English chunk, produce a complete natural sentence in ${targetLanguage || "English"}. Do NOT translate word by word. Then fill all output fields:
+
+- **text**: The complete natural sentence in ${targetLanguage || "English"}.
+- **meaning**: The meaning of THIS specific chunk translated back into ${nativeLanguage || "Vietnamese"} — this must be a concise, natural ${nativeLanguage || "Vietnamese"} translation of the chunk's meaning (NOT the full diary sentence). This is shown to the learner in the practice game as the hint.
+- **ipa**: ALWAYS provide an accurate IPA (International Phonetic Alphabet) transcription of the FULL sentence in ${targetLanguage || "English"}, using standard IPA symbols for that language's phonology. Return ONLY the phonetic symbols themselves — do NOT wrap the transcription in slashes, brackets, or any other delimiter (e.g. return "haʊ z ɪt ˈɡoʊɪŋ", not "/haʊ z ɪt ˈɡoʊɪŋ/"). This is required for every chunk, regardless of script.
+- **romanization**: ONLY if ${targetLanguage || "English"} is NOT written in Latin script (e.g. Korean, Japanese, Chinese, Thai, Arabic, Russian, Hindi) — provide a Latin-alphabet romanization with syllable separators (e.g. "Sa-rang-hae-yo", "nǐ-hǎo"). If ${targetLanguage || "English"} already uses Latin script (e.g. English, Vietnamese, French, Spanish, German), set "romanization" to an empty string "".
+
+## Chunk Definition
+A Chunk is: A short, complete, natural sentence that expresses a complete meaning and can be used independently in real spoken conversation — this is a communication-focused method, so chunks must sound like real everyday speech, NOT like literary writing, poetry, or formal written prose.
+A good chunk should: have a subject when needed, have a main verb, use correct tense and context, be immediately usable if the learner said it out loud to someone tomorrow.
+
+## Core Principles
+- Meaning First. Natural First. Accuracy Over Coverage.
+- English is the sole Semantic Layer.
+- Each chunk is a complete sentence, NOT a phrase or collocation.
+- Exactly 1 Common Chunk per Semantic Unit. At most 1 Personalized Chunk per Semantic Unit.
+- Personalized Chunks only add learning value when genuinely grounded in what the user has told you — they never change the Semantic Unit's meaning, and they are never a license to invent details.
+- NEVER hallucinate: no invented names, numbers, causes, professional jargon, tools, or scenarios that are not explicitly present in the Diary Content or User Profile. If unsure, leave it out.
+${existingGroupsContext}`;
+
+      console.log("Generating chunks for diary content...");
+      const responseText = callGeminiAPI(prompt);
+
+      return createResponse({
+        success: true,
+        status: "Completed",
+        result: responseText
+      });
+    }
+
+    return createResponse({ success: false, error: `Action '${action}' không được hỗ trợ.` });
+
+  } catch (error) {
+    return createResponse({ success: false, error: error.toString() });
+  }
+}
+
+/**
+ * Schema dùng chung cho một Chunk (common hoặc personalized).
+ * Bắt buộc Gemini phải trả đủ field, kể cả "ipa", tránh trường hợp model bỏ sót.
+ */
+function getChunkSchema() {
+  return {
+    type: "OBJECT",
+    properties: {
+      english: { type: "STRING" },
+      text: { type: "STRING" },
+      meaning: { type: "STRING" },
+      ipa: { type: "STRING" },
+      romanization: { type: "STRING" },
+      semanticGroupId: { type: "STRING" },
+      proposedCanonicalMeaning: { type: "STRING" }
+    },
+    required: ["english", "text", "meaning", "ipa", "romanization", "semanticGroupId"]
+  };
+}
+
+/**
+ * Hàm gọi trực tiếp lên REST API của Gemini với cấu hình ép xuất JSON có schema.
+ * commonChunks và personalizedChunks được giới hạn tối đa 1 phần tử ngay ở schema
+ * (minItems/maxItems) để Gemini không thể trả về nhiều hơn dù prompt có bị bỏ qua.
+ */
+function callGeminiAPI(promptText) {
+  const url = `${GEMINI_MODEL}?key=${GEMINI_API_KEY}`;
+
+  const chunkSchema = getChunkSchema();
+
+  const responseSchema = {
+    type: "OBJECT",
+    properties: {
+      englishNarrative: { type: "STRING" },
+      semanticUnits: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            order: { type: "INTEGER" },
+            nativeText: { type: "STRING" },
+            englishText: { type: "STRING" },
+            commonChunks: {
+              type: "ARRAY",
+              items: chunkSchema,
+              minItems: 1,
+              maxItems: 1
+            },
+            personalizedChunks: {
+              type: "ARRAY",
+              items: chunkSchema,
+              minItems: 0,
+              maxItems: 1
+            }
+          },
+          required: ["order", "nativeText", "englishText", "commonChunks", "personalizedChunks"]
+        }
+      }
+    },
+    required: ["englishNarrative", "semanticUnits"]
+  };
+
+  const payload = {
+    contents: [{ parts: [{ text: promptText }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema,
+      temperature: 0.3
+    }
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const resCode = response.getResponseCode();
+  const resBody = response.getContentText();
+  const json = JSON.parse(resBody);
+
+  if (resCode !== 200) {
+    throw new Error(`Gemini API Error (Status ${resCode}): ${resBody}`);
+  }
+
+  if (json.candidates && json.candidates[0].content.parts[0].text) {
+    return json.candidates[0].content.parts[0].text;
+  } else {
+    throw new Error("Cấu trúc phản hồi JSON nhận được từ Gemini không hợp lệ.");
+  }
+}
+
+/**
+ * Helper đóng gói dữ liệu phản hồi JSON hỗ trợ CORS cho ứng dụng Web gọi ngoài
+ */
+function createResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}

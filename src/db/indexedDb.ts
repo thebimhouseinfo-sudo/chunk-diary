@@ -232,6 +232,30 @@ export async function saveChunks(chunks: Chunk[]): Promise<void> {
   });
 }
 
+/**
+ * Persists generated meaning units and chunks in one IndexedDB transaction.
+ * Callers must build the arrays before opening the transaction; awaiting an
+ * individual request inside an IndexedDB transaction can auto-close it.
+ */
+export async function saveMeaningUnitsAndChunks(
+  units: MeaningUnit[],
+  chunks: Chunk[]
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["meaningUnits", "chunks"], "readwrite");
+    const unitStore = transaction.objectStore("meaningUnits");
+    const chunkStore = transaction.objectStore("chunks");
+
+    units.forEach((unit) => unitStore.put(unit));
+    chunks.forEach((chunk) => chunkStore.put(chunk));
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction aborted"));
+  });
+}
+
 export async function deleteChunk(chunkId: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {

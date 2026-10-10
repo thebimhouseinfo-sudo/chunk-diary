@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Send, AudioLines } from "lucide-react";
+import { MAX_STORY_MESSAGE_LENGTH } from "../constants";
 
 interface TypingInputProps {
   onSend: (text: string) => void;
@@ -34,10 +35,14 @@ export default function TypingInput({ onSend, onSwitchMode }: TypingInputProps) 
             type="text"
             placeholder="Kể câu chuyện của bạn..."
             value={text}
+            maxLength={MAX_STORY_MESSAGE_LENGTH}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             className="w-full bg-white border border-slate-100 focus:border-vibrant-indigo/80 rounded-2xl pl-3.5 pr-11 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm placeholder:text-slate-400/80 transition-all"
           />
+          <span className="absolute right-12 bottom-0.5 text-[9px] text-slate-400 font-bold pointer-events-none select-none">
+            {text.length}/{MAX_STORY_MESSAGE_LENGTH}
+          </span>
           <button
             onClick={handleSend}
             disabled={!text.trim()}
