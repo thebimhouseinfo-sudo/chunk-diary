@@ -123,5 +123,21 @@ export async function restoreManualCloudBackup(
   }
   await verifyLinkedOwner(client, ownerUserId);
   await importIntoScopedWorkspace(remote.backup, { kind: "account", userId: ownerUserId }, { confirmed: true });
+  restoreAccountPreferences(ownerUserId, remote.backup);
   return receiptOf(ownerUserId, remote.backup);
+}
+
+
+/** Restore only three allowlisted, owner-scoped local UI preferences. */
+export function restoreAccountPreferences(ownerUserId: string, backup: LegacyBackup): void {
+  const active = activeWorkspaceOwner();
+  if (active?.kind !== "account" || active.userId !== ownerUserId) {
+    throw new Error("Cannot restore settings into another owner's browser scope");
+  }
+  for (const key of CLOUD_BACKUP_SETTINGS_KEYS) {
+    const value = backup.snapshot.localSettings[key];
+    if (typeof value === "string") {
+      localStorage.setItem(workspaceLocalKey(key), value);
+    }
+  }
 }
