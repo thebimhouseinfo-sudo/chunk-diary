@@ -182,6 +182,20 @@ export async function validateLegacyBackup(value: unknown): Promise<LegacyBackup
   }
   const report = inspectLegacySnapshot(backup.snapshot);
   if (!report.compatibleShape) throw new Error("Invalid legacy backup records");
+  // The digest intentionally canonicalizes the seven known stores. Reject extras
+  // rather than silently ignoring data an imported snapshot may contain.
+  const storeNames = Object.keys(backup.snapshot.stores);
+  if (storeNames.length !== LEGACY_STORES.length ||
+      storeNames.some((name) => !(LEGACY_STORES as readonly string[]).includes(name))) {
+    throw new Error("Legacy backup has unrecognized stores");
+  }
+  // An imported backup must never smuggle provider tokens or origin-wide secrets
+  // into a future localStorage restore flow.
+  for (const [key, value] of Object.entries(backup.snapshot.localSettings)) {
+    if (!(LEGACY_LOCAL_SETTINGS_KEYS as readonly string[]).includes(key) || typeof value !== "string") {
+      throw new Error("Legacy backup has unrecognized local settings");
+    }
+  }
   for (const store of LEGACY_STORES) {
     if (backup.counts[store] !== report.counts[store]) {
       throw new Error("Legacy backup store count mismatch: " + store);
