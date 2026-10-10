@@ -5,6 +5,12 @@ on:
     branches: [codex/supabase-app]
     paths:
       - 'src/db/scopedWorkspace.ts'
+      - 'src/components/SettingsView.tsx'
+      - 'src/components/profile/UserProfileSetup.tsx'
+      - 'src/components/story_chat/StoryChatView.tsx'
+      - 'src/services/storage/cloudSyncAdapter.ts'
+      - 'tests/cloud-consent-guard.test.ts'
+      - 'docs/contracts/BETA_BACKUP_V1.md'
       - 'src/db/legacySnapshot.ts'
       - 'src/db/legacyCompatibility.ts'
       - 'tests/scopedWorkspace.test.ts'
@@ -45,7 +51,7 @@ jobs:
       - name: Type check
         run: npm run lint
       - name: IndexedDB regression and negative controls
-        run: node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts tests/scopedWorkspace.test.ts
+        run: node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts
       - name: Install headless Chromium
         run: npx playwright install --with-deps chromium
       - name: Same-origin browser data rehearsal
