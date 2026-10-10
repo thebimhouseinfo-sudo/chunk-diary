@@ -5,6 +5,9 @@ on:
     branches: [codex/supabase-app]
     paths:
       - 'src/db/scopedWorkspace.ts'
+      - 'src/App.tsx'
+      - 'src/db/workspaceRouter.ts'
+      - 'tests/browser/m6-account-gate.test.ts'
       - 'src/components/SettingsView.tsx'
       - 'src/components/profile/UserProfileSetup.tsx'
       - 'src/components/story_chat/StoryChatView.tsx'
@@ -59,3 +62,6 @@ jobs:
           done
           # Final beta-main to new-app cutover rehearsal runs ONLY at M8, not per dev commit.
           M1_TEST_ORIGIN=http://127.0.0.1:4173 node --import tsx --test --test-name-pattern='real Chromium: same-origin beta-v4|real Chromium Settings:' tests/browser/m1-browser.test.ts
+
+      - name: M6 Chromium account-verification gate
+        run: M1_TEST_ORIGIN=http://127.0.0.1:4173 node --import tsx --test tests/browser/m6-account-gate.test.ts
