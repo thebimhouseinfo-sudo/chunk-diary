@@ -5,6 +5,8 @@
 import { SemanticGroup } from "../types";
 import { ensureGuestSession } from "../services/supabase/client";
 import { getSettings } from "../db/userDb";
+import { validateGeneratedResponse, type GeneratedResponse } from "../domain/generation";
+import { getLanguageProfile } from "../domain/language";
 
 export const MAX_DIARY_CONTENT_LENGTH = 12000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
@@ -66,33 +68,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const ENDPOINT_URL = configuredEndpoint || (supabaseUrl ? `${supabaseUrl}/functions/v1/generate-chunks` : "/api/generate-chunks");
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
-export interface AIServiceResponse {
-  requestId?: string;
-  englishNarrative: string;
-  semanticUnits: Array<{
-    order: number;
-    nativeText: string;
-    englishText: string;
-    commonChunks: Array<{
-      english: string;
-      text: string;
-      meaning: string;
-      ipa: string;
-      romanization: string;
-      semanticGroupId: string;
-      proposedCanonicalMeaning?: string;
-    }>;
-    personalizedChunks: Array<{
-      english: string;
-      text: string;
-      meaning: string;
-      ipa: string;
-      romanization: string;
-      semanticGroupId: string;
-      proposedCanonicalMeaning?: string;
-    }>;
-  }>;
-}
+export type AIServiceResponse = GeneratedResponse & { requestId?: string };
 
 export interface GenerateChunksInput {
   diaryContent: string;
@@ -197,7 +173,7 @@ export async function callGenerateChunks(
         throw new AIServiceError("Phản hồi máy chủ không hợp lệ.", "INVALID_MODEL_OUTPUT", true, requestId);
       }) as unknown;
       const result = extractResult(data, requestId);
-      const validated = validateAIServiceResponse(result, requestId);
+      const validated = validateAIServiceResponse(result, requestId, input.nativeLanguage, input.targetLanguage);
 
       onStatusUpdate?.("Completed", "Đã nhận kết quả phân tích thành công!");
       return { ...validated, requestId };
@@ -245,48 +221,20 @@ function extractResult(data: unknown, requestId: string): unknown {
   return data.result ?? data;
 }
 
-function validateAIServiceResponse(raw: unknown, requestId: string): AIServiceResponse {
+function validateAIServiceResponse(
+  raw: unknown, requestId: string, sourceLanguage: string, targetLanguage: string
+): AIServiceResponse {
   const parsed = typeof raw === "string" ? cleanAndParseJSON(raw, requestId) : raw;
-  if (!isRecord(parsed) || typeof parsed.englishNarrative !== "string" || !Array.isArray(parsed.semanticUnits)) {
-    throw new AIServiceError("AI trả về dữ liệu không đúng định dạng.", "INVALID_MODEL_OUTPUT", true, requestId);
+  try {
+    return validateGeneratedResponse(
+      parsed,
+      getLanguageProfile(sourceLanguage).locale,
+      getLanguageProfile(targetLanguage).locale
+    );
+  } catch {
+    // Do not leak model payloads, provider internals or diary content.
+    throw new AIServiceError("AI trả về nội dung không đúng hợp đồng đa ngôn ngữ.", "INVALID_MODEL_OUTPUT", true, requestId);
   }
-
-  const semanticUnits = parsed.semanticUnits.map((unit, index) => {
-    if (!isRecord(unit) || typeof unit.nativeText !== "string" || typeof unit.englishText !== "string") {
-      throw new AIServiceError(`Semantic unit ${index + 1} không hợp lệ.`, "INVALID_MODEL_OUTPUT", true, requestId);
-    }
-    return {
-      order: typeof unit.order === "number" ? unit.order : index + 1,
-      nativeText: unit.nativeText,
-      englishText: unit.englishText,
-      commonChunks: validateChunkList(unit.commonChunks, requestId),
-      personalizedChunks: validateChunkList(unit.personalizedChunks, requestId)
-    };
-  });
-
-  return { englishNarrative: parsed.englishNarrative, semanticUnits };
-}
-
-function validateChunkList(raw: unknown, requestId: string): AIServiceResponse["semanticUnits"][number]["commonChunks"] {
-  if (!Array.isArray(raw)) {
-    throw new AIServiceError("Danh sách chunks không hợp lệ.", "INVALID_MODEL_OUTPUT", true, requestId);
-  }
-  return raw.map((chunk) => {
-    if (!isRecord(chunk) || typeof chunk.text !== "string" || !chunk.text.trim() || typeof chunk.meaning !== "string") {
-      throw new AIServiceError("Chunk không có đủ nội dung bắt buộc.", "INVALID_MODEL_OUTPUT", true, requestId);
-    }
-    return {
-      english: typeof chunk.english === "string" ? chunk.english : chunk.text,
-      text: chunk.text,
-      meaning: chunk.meaning,
-      ipa: typeof chunk.ipa === "string" ? chunk.ipa : "",
-      romanization: typeof chunk.romanization === "string" ? chunk.romanization : "",
-      semanticGroupId: typeof chunk.semanticGroupId === "string" ? chunk.semanticGroupId : "",
-      ...(typeof chunk.proposedCanonicalMeaning === "string"
-        ? { proposedCanonicalMeaning: chunk.proposedCanonicalMeaning }
-        : {})
-    };
-  });
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
