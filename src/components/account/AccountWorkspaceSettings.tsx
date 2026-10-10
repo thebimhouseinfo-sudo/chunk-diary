@@ -163,6 +163,7 @@ export default function AccountWorkspaceSettings() {
     if (!supabase || owner?.kind !== "account") return;
     const outcome = await sendQueuedBackup(supabase, owner.userId);
     setQueued(await inspectBackupQueue(owner.userId));
+    if (outcome.status === "synced") setCloudPreview(null);
     setStatus(outcome.status === "synced"
       ? "Đã đồng bộ bản sao bị gián đoạn. Không gửi thêm dữ liệu."
       : "Hàng đợi: " + outcome.status + ". " +
@@ -214,7 +215,7 @@ export default function AccountWorkspaceSettings() {
         Đang sử dụng: {owner?.kind === "account" ? "Workspace tài khoản đã xác minh" : "Local beta trên thiết bị"}
       </p>
       <p className="text-xs text-slate-500">
-        Đăng nhập KHÔNG đồng nghĩa với upload nhật ký hoặc chia sẻ chunks. Sao lưu đám mây hiện chưa bật.
+        Đăng nhập KHÔNG tự tải nhật ký hoặc chia sẻ chunks. Chỉ sao lưu thủ công khi bạn xác nhận; đồng bộ tự động vẫn tắt.
         Dữ liệu beta chỉ chuyển khi bạn xem trước và đồng ý nhập riêng.
       </p>
       {!isSupabaseConfigured && (
