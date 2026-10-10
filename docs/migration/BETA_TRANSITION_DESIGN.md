@@ -1,86 +1,79 @@
-# Thiết kế chuyển beta sang app Supabase
+# Thiết kế thay thế beta bằng Supabase App — Direct Cutover
 
-Ngày: 2026-10-10. Trạng thái: thiết kế để review, chưa triển khai production.
+Ngày: 2026-10-10. Phiên bản: 2.0. Trạng thái: **thiết kế cho phát hành thay thế, chưa triển khai production**.
+Kế hoạch thực thi chi tiết và ưu tiên cao hơn: [APP_DEVELOPMENT_PLAN.md](../APP_DEVELOPMENT_PLAN.md) v1.3.
 
-## Mục tiêu và quyết định của người dùng
+## Quyết định mới: chỉ phát hành khi toàn bộ app đã sẵn sàng
 
-- Giữ mốc beta hiện tại trên `main` ở commit `a5be5a8c11b34e36396564b5f88fd915d9670af7`; tag `beta-stable-2026-10-10` dùng để tham chiếu và rollback.
-- Lưu bản local đang phát triển trên nhánh `codex/supabase-app`, hoàn thiện app mới để bỏ Google Apps Script hoàn toàn.
-- Chuẩn bị bản beta chuyển tiếp từ mốc main ổn định, chỉ thêm tài khoản, backup/sync Supabase và thông báo trong 7 ngày; giữ nguyên backend AI Apps Script của beta trong thời gian này.
-- Sau khi app mới đạt các điều kiện phát hành, thay production bằng app mới, ưu tiên giữ nguyên `https://chunk-diary.vercel.app`.
-- **Dữ liệu cũ tương thích vẫn được load, kể cả người chưa đăng ký.** Tài khoản không phải điều kiện để đọc dữ liệu local. Hết 7 ngày không được xóa dữ liệu, reset DB, ép onboarding lại hoặc chặn đọc dữ liệu cũ.
-- Đăng ký và sync cung cấp backup và khả năng khôi phục khi đổi trình duyệt, thiết bị hoặc origin; chỉ đăng ký mà chưa sync thành công không bảo đảm đã backup.
+Theo quyết định của Human ngày 2026-10-10:
 
-## Cách tách bản ổn định và bản phát triển
+- `main` là bản beta đang hoạt động, giữ nguyên trong toàn bộ thời gian phát triển app mới; mốc tham chiếu: `a5be5a8c11b34e36396564b5f88fd915d9670af7`, tag `beta-stable-2026-10-10`.
+- `codex/supabase-app` là **nhánh tích hợp phát triển chính**, chứa toàn bộ thay đổi frontend, Supabase, AI đa ngôn ngữ, bảo vệ prompt, Voice và backup/sync.
+- **Không triển khai beta chuyển tiếp trên main**; không tạo nhánh `codex/beta-account-sync`, không vá tính năng account/backup vào production trước, **không có giai đoạn bắt buộc thông báo 7 ngày**.
+- Bản beta hiện tại tiếp tục dùng backend Google Apps Script như cũ, không chỉnh sửa vì nhu cầu chuyển đổi; app mới phải loại bỏ phụ thuộc Apps Script khi phát hành.
+- Sau khi nhánh app mới vượt qua data migration, security, AI, browser voice và E2E release gates, chỉ khi có **phê duyệt phát hành rõ ràng của Human**, mới merge/replace `main` bằng bản ứng dụng mới đã kiểm thử và thay thế deployment production trên **cùng origin** `https://chunk-diary.vercel.app`.
+- **Không bắt buộc đăng ký tài khoản** để đọc dữ liệu local cũ, không ép onboarding lại, không xóa/reset IndexedDB hoặc nhật ký cũ.
+- Các chức năng backup/sync, tài khoản và private AI prompt phải hoàn thiện ngay **trong nhánh app mới** trước cutover; không trông chờ bản beta chuyển tiếp để thu thập hoặc dọn dữ liệu trước.
 
-1. `main` giữ nguyên commit baseline trong giai đoạn chuẩn bị. Tag lưu mốc là snapshot Git, không phải cấu hình GitHub branch protection.
-2. Nhánh `codex/supabase-app` chứa toàn bộ code local, SQL, Edge Function và tài liệu Apps Script người dùng bổ sung.
-3. Khi triển khai beta chuyển tiếp, tạo nhánh `codex/beta-account-sync` từ baseline. Không cherry-pick toàn bộ nhánh app mới vì endpoint và hành vi tạo chunks đã thay đổi.
-4. Đưa bản chuyển tiếp vào main qua PR sau kiểm thử; bản app mới chỉ vào main khi đạt điều kiện chuyển production. Không push trực tiếp main và không tự thay đổi production trong bước lưu nhánh.
+## Ranh giới phát hành và rollback
 
-## Tương thích và dữ liệu local
+1. Phát triển, typecheck, test migration và TTS browser tại nhánh `codex/supabase-app`, Supabase staging riêng và khi cần Vercel preview. Không deploy preview vô hạn theo từng commit.
+2. Freeze chính xác source beta đã chạy, xác nhận origin production và mốc release mới. Git commit/tag beta **không tự chứng minh** mã bundle đang phục vụ người dùng nếu deployment metadata chưa đối chiếu.
+3. Dựng fixture IndexedDB thật/sanitized từ bản beta, giữ nguyên ID, số bản ghi, quan hệ, metadata và tiến độ.
+4. **Rehearse direct cutover trên cùng origin thử nghiệm**: chạy bản beta thật để tạo IndexedDB v4, sau đó thay frontend bằng bản mới và đo lại toàn bộ dữ liệu (không giả định chỉ test import JSON là đủ).
+5. Chạy E2E và review test scripts, negative controls; xác nhận đăng nhập/đăng xuất, quyền sở hữu, RLS, prompt-private, AI schema, offline network failure, browser TTS quota/fallback.
+6. Khi release gate PASS và Human phê duyệt, merge/release chính xác bản đã test vào `main` và cập nhật production deployment một lần; kiểm tra post-release trước khi tuyên bố thành công.
+7. Giữ bản beta deployment cũ để **recovery**, nhưng không tự động rollback bằng binary cũ nếu DB đã nâng version: IndexedDB phiên bản cao có thể khiến beta cũ gặp `VersionError`. Phải có rollback-compatible build, verified export/recovery hoặc hướng nâng cấp khác trước khi phát hành; không xóa dữ liệu phát sinh sau cutover.
+8. Mất kết nối Supabase hoặc backend mới phải **không chặn khả năng đọc/học từ dữ liệu local**. Không tự chạy lại backend Apps Script trên production như một giai đoạn bắt buộc.
 
-Production đã được kiểm tra trực tiếp: bundle `/assets/index-B8mhiAC-.js` dùng Apps Script, `LanguageChunkDiaryDB` version 4 và `StoryChatDB`.
-Local cũng dùng `LanguageChunkDiaryDB` version 4. Đây là cơ sở tương thích schema, chưa phải bằng chứng round-trip đầy đủ trên dữ liệu beta thực.
+**Điều kiện same-origin:** IndexedDB và localStorage bị cô lập theo origin. Chỉ thay deployment ở `https://chunk-diary.vercel.app` mới tái sử dụng trực tiếp local data lưu ở origin đó. Nếu người dùng nào còn ở GitHub Pages hoặc domain khác, cần đường export/import hoặc bridge tự nguyện riêng trước khi ngừng phục vụ origin cũ; redirect thông thường **không chuyển dữ liệu**.
 
-- Đọc IndexedDB hiện có trước khi restore cloud. Không ghi đè local bằng một snapshot cloud rỗng hoặc cũ hơn.
-- Giữ ID và quan hệ diary -> meaning unit -> chunk -> semantic group; giữ các trường sao, số lần luyện, rating và timestamps hiện có.
-- Nếu cần nâng version DB, chỉ dùng migration cộng thêm có kiểm thử; không xóa/recreate store để chuyển backend.
-- Dữ liệu không hợp lệ được giữ lại để export/recovery, không silently bỏ hoặc reset. Báo lỗi rõ ràng khi một bản ghi không đọc được.
-- Không thay đổi tên/key dữ liệu `StoryChatDB` và các localStorage liên quan mà không có bước tương thích.
-- Hai domain khác nhau không chia sẻ IndexedDB. Nếu còn beta user ở GitHub Pages, cần một bản export/bridge tại origin cũ trước khi đóng nó. Redirect đơn thuần không chuyển được dữ liệu.
+## Dữ liệu beta phải tương thích 100% theo hợp đồng
 
-## Tài khoản và backup trong beta chuyển tiếp
-
-Giao diện cho phép đăng ký/liên kết tài khoản Supabase, đăng nhập trên thiết bị khác, sync thủ công, xem trạng thái backup và xuất/nhập JSON đầy đủ. Phương thức đăng nhập cụ thể được chọn trước khi triển khai UI.
-
-Backup phải chứa dữ liệu gốc, không chỉ bảng `userProgress` phụ:
+Đã biết beta dùng `LanguageChunkDiaryDB` version 4 và `StoryChatDB`; gồm:
 
 - `diaries`, `meaningUnits`, `chunks`, `semanticGroups`, `settings`, `englishChunks`, `userProgress`.
-- Session Story Chat và các cài đặt localStorage của ứng dụng có ảnh hưởng đến việc tiếp tục dùng app.
-- Không export/restore token Supabase hoặc thông tin đăng nhập trong JSON backup.
+- Session Story Chat và các cài đặt `localStorage` cần để tiếp tục học.
+- Tiến độ học chủ yếu nằm trong `chunks` (số lần luyện, sao, điểm đánh giá và thời gian), không dựa riêng vào `userProgress`.
+- Giữ toàn bộ khóa ID và quan hệ diary → meaning unit → chunk → semantic group.
+- Field mới ở app mới phải có default/normalizer an toàn; giữ dữ liệu gốc/field không nhận diện khi export, không xóa store để chuyển backend.
+- Khi cần nâng schema/index/version IndexedDB, phải chứng minh migration, reopen, restore và rollback. Dữ liệu hỏng phải còn đường export/recovery và lỗi rõ ràng.
 
-Snapshot có version, thời điểm tạo, manifest số bản ghi theo store và checksum. Upload phải xác nhận thành công trước khi hiển thị đã backup. Restore phải validate, giữ ID, merge theo chính sách rõ ràng và xác nhận transaction hoàn tất. Khi không có metadata đáng tin cậy, ưu tiên giữ local và yêu cầu lựa chọn trước khi ghi đè.
+### Account và ownership
 
-Tiến độ học lấy từ `chunks`, nơi luồng luyện tập thực sự cập nhật; không dựa riêng vào `userProgress` vốn không được cập nhật theo mỗi lần luyện. Sync cần hàng đợi bền vững, retry, xử lý mất mạng và chống upload trùng. Quyền RLS phải hỗ trợ đúng thao tác insert/select/update của upsert.
+Legacy data ban đầu chưa có owner Supabase là **guest local/unclaimed**, nhưng vẫn phải đọc được ngay. Không tự nhận toàn bộ dữ liệu trên trình duyệt cho user vừa đăng nhập. Định nghĩa workspace riêng theo account, flow nhận dữ liệu guest có preview + confirm + cancel, chuyển account không thấy dữ liệu/StoryChat/sync queue của account khác, logout không xóa dữ liệu. Cùng local record ID ở hai account không được lẫn, kể cả khi offline và retry.
 
-Cloud sync là lựa chọn có thông báo về nội dung được upload. Không tự thu thập nhật ký cá nhân hoặc đưa vào corpus cải thiện AI như một tác dụng phụ của backup. Anonymous identity là kỹ thuật tùy chọn, không thay thế khả năng khôi phục bằng tài khoản.
+Cloud rows cần khóa user-scoped `(user_id,id)` hoặc tương đương, đúng `upsert(..., { onConflict: "user_id,id" })` và RLS SELECT/INSERT/UPDATE/DELETE. Không dùng text ID toàn cục để quyết định quyền sở hữu. Chỉ áp dụng migration vào đúng dự án ChunkDiary Supabase sau khi kiểm thử staging và được phép.
 
-## Thông báo 7 ngày
+## Backup/restore là tính năng của app mới, không phải beta chuyển tiếp
 
-- Bắt đầu tính 7 ngày từ thời điểm bản beta chuyển tiếp thực sự được phát hành, theo Asia/Bangkok; không tính từ ngày tạo tài liệu.
-- Thông báo: app sắp chuyển backend, dữ liệu trên cùng trình duyệt vẫn được giữ nếu tương thích; khuyến nghị đăng ký và backup để chuyển thiết bị hoặc phục hồi khi xóa dữ liệu trình duyệt.
-- Hiển thị hạn thông báo và trạng thái backup thực. Không tuyên bố người chưa đăng ký sẽ mất dữ liệu local.
-- Kết thúc thông báo không tự kích hoạt xóa dữ liệu hoặc phát hành app chưa kiểm thử. Cutover chỉ diễn ra sau khi app mới đạt release gates.
+- Backup/sync tuỳ chọn; login **không đồng nghĩa** đã backup. Đánh dấu `Backed up` chỉ khi server thực sự xác nhận dữ liệu cần thiết đã ghi.
+- Snapshot đầy đủ: schemaVersion, manifest count/store, checksum, IDs, relationships, StoryChat session, settings và thống kê thật trong `chunks`. Loại trừ token đăng nhập và secrets.
+- Restore có preview, validate toàn bộ snapshot, merge/conflict policies, transaction-commit verification, offline retry/idempotency. Snapshot cloud rỗng/cũ không được ghi đè local.
+- Trên thiết bị khác, chỉ đảm bảo khôi phục cloud backup sau khi đồng bộ **thành công** vào một account có thể đăng nhập lại; anonymous guest token không tự bảo đảm khả năng recovery.
+- 3 phạm vi riêng: **AI_PROCESSING** (user chủ động Generate, nội dung gửi tạm tới model và có thông báo rõ ràng), **BACKUP_SYNC** (lưu lâu dài có opt-in), **CORPUS_SHARE** (chia sẻ corpus có opt-in riêng, mặc định OFF). Không bao giờ đánh đồng ba quyền này.
 
-## Port Apps Script sang app mới
+## AI, prompt và voice của bản mới
 
-Nguồn tham chiếu: `docs/app script/code.gs.txt`. Bản này lấy API key từ Script Properties, không có key Gemini hardcode được phát hiện trong bước kiểm tra pattern secrets.
+- Frontend chỉ gửi nội dung và settings cần thiết, không chứa prompt riêng tư. Prompt nội bộ mới nằm ở kho backend có giới hạn truy cập; không hiện trong public source, frontend bundle, API/logs hoặc lỗi. Prompt cũ trong `server.ts`, Edge Function và `docs/app script/code.gs.txt` đã xuất hiện trong Git public phải xem là disclosed, không thể thu hồi bằng cách xoá khỏi bản hiện tại.
+- Core AI phải đa ngôn ngữ; vẫn nhận diện dữ liệu English pivot cũ, nhưng không ép mọi ngôn ngữ đi qua tiếng Anh. Quy tắc 1 common + tối đa 1 personalized chunk trên semantic unit, không bịa nội dung, đúng phiên âm/ngôn ngữ đích; validate server trước khi lưu local.
+- Voice giai đoạn này là **Web/browser**: user **chỉ đổi giọng và nghe thử**, giọng có thể thể hiện accent khác nhau, không chỉnh speed/pitch/quality. Ưu tiên Web Speech miễn phí, Cloud Neural TTS có quota cứng + fallback text/giọng browser. Offline voice, native iOS/Android TTS, quyền OS microphone/audio session thuộc phase Native riêng, không phải release gate Web.
 
-Đưa toàn bộ quy tắc prompt và response schema sang Supabase Edge Function, không chỉ thay URL. Đặc biệt giữ:
+## Gate nghiệm thu phát hành một lần
 
-- English pivot trung thành với nội dung, không thêm tình tiết.
-- Cá nhân hóa chỉ đổi register/thuật ngữ đúng nghề, không thêm ý hoặc chi tiết mới.
-- Mỗi semantic unit có đúng một common chunk và tối đa một personalized chunk; trường hợp không có thuật ngữ phù hợp cho phép personalized rỗng.
-- Các field IPA, romanization và semantic-group assignment; schema phải được kiểm tra trước khi ghi local.
+| Gate | Bằng chứng phải PASS |
+|---|---|
+| DATA | Beta same-origin v4 → app mới không login, reload/training/backup/restore, bảo toàn IDs, số lượng, quan hệ và thống kê |
+| OWNERSHIP | Guest và hai account cùng trình duyệt/tên ID giống nhau không lộ/ghi đè/sync chéo |
+| SECURITY | RLS 2 users, PK theo user, consent tách 3 loại, không rò token/prompt/nhật ký trong logs |
+| AI | Prompt riêng tư mới, schema và semantic multilingual quality, timeout/error không gây mất local data |
+| VOICE WEB | Browser voice preview/selection, tự fallback khi giọng/cloud quota không sẵn; không bắt buộc offline |
+| RELEASE | Test thực tế trong preview/staging, Reviewer xem cả scripts, direct replacement rehearsal, rollback data-compatible và Human phê duyệt |
 
-App mới cuối cùng không gọi Apps Script. Beta chuyển tiếp vẫn giữ Apps Script trong thời gian chuẩn bị. Rollback app mới dùng deployment beta đã lưu, không xóa dữ liệu đã tạo sau cutover.
+Không có bước release trung gian vào `main`, không yêu cầu đồng hồ 7 ngày và không tự động wipe bất kỳ dữ liệu user nào.
 
-## Điều kiện phát hành
+## Giới hạn thông tin
 
-1. Dữ liệu beta cũ trên cùng origin load được mà không cần đăng ký; bản ghi và quan hệ giữ nguyên sau mở app, refresh và luyện tập.
-2. Backup -> restore trên thiết bị sạch tái tạo đầy đủ thư viện và tiến độ, có đối chiếu số bản ghi và ID.
-3. Tài khoản đăng nhập ở thiết bị khác restore được; hai tài khoản không đọc/ghi dữ liệu của nhau.
-4. Mất mạng hoặc sync lỗi không làm mất dữ liệu local; retry không tạo trùng hoặc ghi đè tiến độ mới.
-5. Supabase generation đáp ứng quy tắc Apps Script và xử lý output lỗi/timeout trước khi ghi database.
-6. Bản chuyển tiếp và app mới đều typecheck/build pass, có kiểm thử migration, RLS và manual beta acceptance.
-7. Supabase project đúng cho ChunkDiary, Auth, migrations, secrets và Edge Function được xác nhận trước khi bật backend mới.
-8. Có deployment rollback, JSON recovery và thông báo 7 ngày đã được kiểm tra; chỉ chuyển production khi được người dùng cho phép.
+Bản baseline và tài liệu prior audit chưa chứng minh đầy đủ nguồn production Vercel build SHA. Dự án Supabase được kết nối trước đây có dấu hiệu thuộc GSA, không được dùng cho ChunkDiary nếu chưa xác nhận. Những điểm này là pre-release validation gates, không phải quyền để thay đổi production hiện tại.
 
-## Giới hạn kiểm tra hiện tại
-
-GitHub main và local HEAD cùng baseline sau fetch. Vercel metadata không cung cấp commit SHA của deployment, nên không khẳng định production build đúng toàn bộ source baseline chỉ dựa vào Git.
-Supabase đang kết nối chưa có bảng/function ChunkDiary và có function GSA; không dùng project đó làm đích migration khi chưa xác nhận.
-Chưa sửa product code, chưa áp SQL, chưa thay production hoặc dữ liệu user trong bước tách nhánh và viết thiết kế này.
-
-Thiết kế này thay thế các chỉ dẫn xung đột về thu gom tự động, bắt buộc tài khoản và đóng origin cũ trong tài liệu kế hoạch trước đây. Các bước triển khai chi tiết sẽ được chốt sau review thiết kế.
+**Tài liệu này thay thế thiết kế beta transition cũ**. Mọi chỉ dẫn trước đây về `codex/beta-account-sync`, đăng ký/backup trung gian trên `main`, thu thập nhật ký tự động hoặc cảnh báo bắt buộc 7 ngày đều không còn hiệu lực.
