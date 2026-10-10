@@ -1,0 +1,38 @@
+name: M2 Multilingual Domain
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'src/domain/**'
+      - 'src/types.ts'
+      - 'src/utils/aiService.ts'
+      - 'src/components/story_chat/StoryChatView.tsx'
+      - 'tests/multilingual.test.ts'
+      - 'docs/contracts/MULTILINGUAL_V2.md'
+      - '.github/workflows/m2-domain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  multilingual-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install CI test-only types
+        run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5 playwright@1.56.1
+      - name: Type-check
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Multilingual contract tests
+        run: node --import tsx --test tests/multilingual.test.ts
