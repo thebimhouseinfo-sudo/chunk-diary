@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { IDBFactory } from "fake-indexeddb";
+import { IDBFactory as FakeIDBFactory } from "fake-indexeddb";
 import { captureLegacyBackup, validateLegacyBackup } from "../src/db/legacySnapshot.ts";
 import type { LegacySnapshot, LegacyStoreName } from "../src/db/legacyCompatibility.ts";
 import { LEGACY_STORES } from "../src/db/legacyCompatibility.ts";
@@ -11,7 +11,7 @@ const loadFixture = async (): Promise<LegacySnapshot> => JSON.parse(
 );
 
 function createFactory(): IDBFactory {
-  return new IDBFactory() as unknown as IDBFactory;
+  return new FakeIDBFactory() as unknown as IDBFactory;
 }
 const keyFor = (name: LegacyStoreName): string => name === "settings" ? "key" : "id";
 
