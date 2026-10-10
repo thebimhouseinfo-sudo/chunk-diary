@@ -1,0 +1,165 @@
+{
+  "source": {
+    "dbName": "LanguageChunkDiaryDB",
+    "dbVersion": 4,
+    "storyDbName": "StoryChatDB",
+    "storyDbVersion": 1
+  },
+  "stores": {
+    "diaries": [
+      {
+        "id": "beta-diary-1",
+        "title": "Synthetic diary 1",
+        "content": "Hôm nay tôi ôn ngôn ngữ.",
+        "createdAt": "2026-01-10T09:00:00.000Z",
+        "isLocalOnly": true,
+        "legacyCustomField": "must-survive"
+      },
+      {
+        "id": "beta-diary-2",
+        "title": "Synthetic diary 2",
+        "content": "Tôi chào bạn.",
+        "createdAt": "2026-01-11T09:00:00.000Z"
+      }
+    ],
+    "meaningUnits": [
+      {
+        "id": "beta-unit-1",
+        "diaryId": "beta-diary-1",
+        "nativeText": "Hôm nay tôi ôn ngôn ngữ.",
+        "englishPivot": "Today I studied languages.",
+        "order": 0
+      },
+      {
+        "id": "beta-unit-2",
+        "diaryId": "beta-diary-2",
+        "nativeText": "Tôi chào bạn.",
+        "englishPivot": "I say hello to you.",
+        "order": 0
+      }
+    ],
+    "chunks": [
+      {
+        "id": "beta-chunk-1",
+        "meaningUnitId": "beta-unit-1",
+        "semanticGroupId": "group-study",
+        "language": "English",
+        "text": "study languages",
+        "meaning": "học ngôn ngữ",
+        "ipa": "/ˈstʌdi ˈlæŋɡwɪdʒɪz/",
+        "romanization": "",
+        "chunkType": "common",
+        "stars": 4,
+        "bestAccuracy": 87,
+        "timesPracticed": 12,
+        "lastPracticed": "2026-01-13T10:00:00.000Z",
+        "totalReviews": 13,
+        "averageRating": 3.85,
+        "lastRating": 4,
+        "lastReviewed": "2026-01-13T10:00:00.000Z",
+        "sourceDiaryId": "beta-diary-1",
+        "sourceDiaryTitle": "Synthetic diary 1",
+        "otherOldProperty": {
+          "must": "survive"
+        }
+      },
+      {
+        "id": "beta-chunk-2",
+        "meaningUnitId": "beta-unit-2",
+        "semanticGroupId": "welcome-group-1",
+        "language": "Chinese",
+        "text": "你好",
+        "meaning": "xin chào",
+        "ipa": "",
+        "romanization": "nǐ hǎo",
+        "chunkType": "personalized",
+        "stars": 2,
+        "bestAccuracy": 40,
+        "timesPracticed": 3,
+        "lastPracticed": "2026-01-12T10:00:00.000Z",
+        "totalReviews": 3,
+        "averageRating": 2,
+        "lastRating": 2,
+        "lastReviewed": "2026-01-12T10:00:00.000Z",
+        "sourceDiaryId": "beta-diary-2",
+        "sourceDiaryTitle": "Synthetic diary 2"
+      }
+    ],
+    "semanticGroups": [
+      {
+        "id": "group-study",
+        "canonicalMeaning": "study languages",
+        "coverageLevel": 1,
+        "createdAt": "2026-01-10T09:00:00.000Z"
+      }
+    ],
+    "settings": [
+      {
+        "key": "userConfig",
+        "value": {
+          "nickname": "Beta",
+          "nativeLanguage": "Vietnamese",
+          "learningLanguages": [
+            "English",
+            "Chinese"
+          ],
+          "onboarded": true,
+          "cefrLevel": "A2"
+        }
+      }
+    ],
+    "englishChunks": [
+      {
+        "id": "english-1",
+        "text": "study languages",
+        "meaning": "học ngôn ngữ",
+        "ipa": "/ˈstʌdi ˈlæŋɡwɪdʒɪz/",
+        "chunkType": "common",
+        "createdAt": "2026-01-10T09:00:00.000Z",
+        "updatedAt": "2026-01-10T09:00:00.000Z"
+      }
+    ],
+    "userProgress": [
+      {
+        "id": "progress-1",
+        "nativeText": "Hôm nay tôi ôn ngôn ngữ.",
+        "targetLanguage": "English",
+        "targetChunkText": "study languages",
+        "targetMeaning": "học ngôn ngữ",
+        "ipaOrPinyin": "/ˈstʌdi/",
+        "chunkType": "common",
+        "stars": 3,
+        "bestAccuracy": 80,
+        "timesPracticed": 5,
+        "lastPracticed": "2026-01-12T10:00:00.000Z",
+        "totalReviews": 5,
+        "averageRating": 3,
+        "lastRating": 3,
+        "lastReviewed": "2026-01-12T10:00:00.000Z",
+        "createdAt": "2026-01-10T09:00:00.000Z",
+        "updatedAt": "2026-01-12T10:00:00.000Z"
+      }
+    ]
+  },
+  "storySessions": [
+    {
+      "id": "active",
+      "status": "unfinished",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "A synthetic greeting"
+        }
+      ],
+      "generationStatus": "idle",
+      "createdAt": "2026-01-11T09:00:00.000Z",
+      "updatedAt": "2026-01-11T09:00:00.000Z",
+      "unknownStoryField": true
+    }
+  ],
+  "localSettings": {
+    "user_settings": "{\"learningLanguages\":[\"English\",\"Chinese\"]}",
+    "story_chat_settings": "{\"theme\":\"system\",\"defaultInputMode\":\"typing\"}",
+    "story_chat_has_seen_first_greeting": "true"
+  }
+}
