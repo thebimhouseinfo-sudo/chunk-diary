@@ -20,7 +20,6 @@ import { Sparkles, MessageSquare, History, BookOpen, Volume2, Play, ArrowRight }
 import { useMicPermission } from "../../hooks/useMicPermission";
 import { saveEnglishChunk } from "../../db/englishChunkDb";
 import { saveUserTargetProgress } from "../../db/userProgressDb";
-import { cloudSync } from "../../services/storage/cloudSyncAdapter";
 import { MAX_STORY_MESSAGE_LENGTH } from "./constants";
 
 async function getDb(): Promise<IDBDatabase> {
@@ -592,10 +591,8 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       await Promise.allSettled(auxiliaryWrites);
 
       await StoryService.clearActiveSession();
-      if (createdChunksList.length > 0 && cloudSync.syncGeneratedChunks) {
-        cloudSync.syncGeneratedChunks(createdChunksList).catch(err => console.warn("[CloudSyncAdapter] Failed to sync generated chunk corpus:", err));
-        cloudSync.syncUserProgress().catch(err => console.warn("[CloudSyncAdapter] Failed to sync user progress:", err));
-      }
+      // Generated chunks and practice history remain local. Do not upload to a
+      // corpus or cloud backup without separate, explicit user authorization.
       setGeneratedChunks(createdChunksList);
     } catch (e) {
       console.error(e);
