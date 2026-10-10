@@ -4,6 +4,7 @@
  * controls, or OS microphone/audio-session permissions.
  */
 import { getLanguageProfile } from "../domain/language";
+import { workspaceLocalKey } from "../db/workspaceRouter";
 
 export interface BrowserVoiceOption {
   voiceURI: string;
@@ -18,7 +19,7 @@ export function voiceLocale(language: string): string {
   return getLanguageProfile(language).locale;
 }
 function preferenceKey(language: string): string {
-  return preferencePrefix + getLanguageProfile(language).baseLanguage;
+  return workspaceLocalKey(preferencePrefix + getLanguageProfile(language).baseLanguage);
 }
 export function getPreferredVoice(language: string, storage?: Pick<Storage, "getItem">): string | null {
   try {
