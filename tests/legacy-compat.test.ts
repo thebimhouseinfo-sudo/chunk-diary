@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import * as ts from "typescript";
 import {
   LEGACY_DB_VERSION,
   LEGACY_STORES,
@@ -102,4 +103,51 @@ test("empty fresh beta-v4 database is valid, no onboarding or cloud session requ
   fixture.storySessions = [];
   fixture.localSettings = {};
   assert.equal(inspectLegacySnapshot(fixture).compatibleShape, true);
+});
+
+test("actual indexedDb.ts source matches the beta v4 fixture schema", async () => {
+  // Inspect the real DB creation code rather than trusting only copied fixture data.
+  const code = await readFile(new URL("../src/db/indexedDb.ts", import.meta.url), "utf8");
+  const file = ts.createSourceFile("indexedDb.ts", code, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const stores = new Map<string, string>();
+  const indexes = new Set<string>();
+  let dbName = "";
+  let dbVersion = -1;
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      if (node.name.text === "DB_NAME" && node.initializer && ts.isStringLiteral(node.initializer)) {
+        dbName = node.initializer.text;
+      }
+      if (node.name.text === "DB_VERSION" && node.initializer && ts.isNumericLiteral(node.initializer)) {
+        dbVersion = Number(node.initializer.text);
+      }
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text;
+      const firstArg = node.arguments[0];
+      if (firstArg && ts.isStringLiteral(firstArg)) {
+        if (method === "createObjectStore") {
+          const options = node.arguments[1];
+          assert.ok(options && ts.isObjectLiteralExpression(options), "store must declare keyPath");
+          const keyPath = options.properties.find((p): p is ts.PropertyAssignment =>
+            ts.isPropertyAssignment(p) && p.name.getText(file) === "keyPath");
+          assert.ok(keyPath && ts.isStringLiteral(keyPath.initializer), "store keyPath must be literal");
+          stores.set(firstArg.text, keyPath.initializer.text);
+        }
+        if (method === "createIndex") indexes.add(firstArg.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.equal(dbName, "LanguageChunkDiaryDB");
+  assert.equal(dbVersion, LEGACY_DB_VERSION);
+  assert.deepEqual([...stores.keys()].sort(), [...LEGACY_STORES].sort());
+  assert.equal(stores.get("settings"), "key");
+  for (const name of LEGACY_STORES.filter((store) => store !== "settings")) {
+    assert.equal(stores.get(name), "id");
+  }
+  assert.deepEqual([...indexes].sort(), [
+    "diaryId", "meaningUnitId", "packageId", "semanticGroupId", "specialty", "userId",
+  ].sort());
 });
