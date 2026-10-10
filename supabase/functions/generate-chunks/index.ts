@@ -74,7 +74,7 @@ function validateRequest(body: unknown) {
     })),
   };
 }
-function validateResponse(
+export function validateResponse(
   raw: unknown, sourceLanguage: string, targetLanguage: string, knownGroupIds: readonly string[],
 ): Record<string, unknown> {
   if (!record(raw) || raw.contractVersion !== "2" ||
