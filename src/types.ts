@@ -10,7 +10,13 @@ export interface MeaningUnit {
   id?: string;
   diaryId: string;
   nativeText: string;
-  englishPivot: string;
+  /** Canonical source-language text; beta used nativeText. */
+  sourceText?: string;
+  /** Language tags can be normalized without changing existing beta records. */
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  /** Optional legacy English pivot. Never synthesize this for other languages. */
+  englishPivot?: string;
   order: number;
   specialty?: string;
   subSpecialty?: string;
@@ -28,8 +34,11 @@ export interface Chunk {
   meaningUnitId: string;
   semanticGroupId?: string; // Links this chunk to a SemanticGroup in the library
   language: string;
+  /** New records may declare canonical target BCP-47 and script explicitly. */
+  targetLocale?: string;
+  targetScript?: string;
   text: string;
-  meaning: string; // Translation in English
+  meaning: string; // Meaning in the learner's native language (NOT necessarily English)
   ipa: string;
   romanization: string;
   chunkType: "common" | "personalized";
@@ -110,6 +119,8 @@ export interface UserSettings {
   nickname?: string;
   nativeLanguage: string;
   learningLanguages: string[];
+  /** Canonical primary BCP-47 target; historical learningLanguages remain accepted. */
+  primaryTargetLocale?: string;
   hobby?: string;
   learningPurpose?: "hobby" | "work";
   specialty?: string;
