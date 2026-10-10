@@ -42,7 +42,7 @@ test("M6: local beta default; accounts A and B never share identical record IDs 
 
   await chooseAccountWorkspace(A, verifier(A), storage);
   assert.equal(activeWorkspaceOwner()?.kind, "account");
-  assert.equal(activeWorkspaceOwner()?.userId, A);
+  assert.deepEqual(activeWorkspaceOwner(), { kind: "account", userId: A });
   assert.match(activeWorkspaceDatabaseName(), /account-aaaaaaaa/);
   assert.equal((await getDiaries()).length, 0, "Account A must not read beta");
   await saveDiary({ ...baseline, content:"ACCOUNT A" } as never);
