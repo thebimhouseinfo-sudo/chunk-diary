@@ -11,6 +11,8 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Cache-Control": "no-store",
 };
+// 2.5 Flash access is restricted for newer API projects; use the current stable Flash.
+export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 const maxDiaryCharacters = 12000;
 const maxGroups = 80;
 const maxUnits = 40;
@@ -272,7 +274,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash",
+      model: Deno.env.get("GEMINI_MODEL")?.trim() || DEFAULT_GEMINI_MODEL,
       contents: JSON.stringify(input),
       config: {
         systemInstruction: privatePrompt,
