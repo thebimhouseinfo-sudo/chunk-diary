@@ -1,10 +1,10 @@
 # ChunkDiary — Detailed App Development Plan
-Version: 1.2 | Date: 2026-10-10 | Project: GSA P-493D | Status: REPLANNED AFTER CR / NOT IMPLEMENTED
+Version: 1.3 | Date: 2026-10-10 | Project: GSA P-493D | Status: REPLANNED FOR DIRECT REPLACEMENT / NOT IMPLEMENTED
 
 ## 0. Decisions, boundaries and baseline
 - **Development integration branch**: `codex/supabase-app`. All new-app work integrates here; short-lived task branches only if isolation is essential, merged promptly. Do not accumulate disconnected commits/branches.
-- **Stable beta / production**: `main` (baseline inspected: `a5be5a8c11b34e36396564b5f88fd915d9670af7`, tag `beta-stable-2026-10-10`). No production deployment, promotion or merge without release gate and user approval.
-- **Source of truth**: source code and this plan in the registered repository; GSA Project/Job Memory records are progress and evidence indexes. After any hotfix to `main`, explicitly reconcile into `codex/supabase-app`.
+- **Stable beta / production**: `main` remains unchanged while developing the app on `codex/supabase-app` (baseline inspected: `a5be5a8c11b34e36396564b5f88fd915d9670af7`, tag `beta-stable-2026-10-10`). **No intermediate main/beta patch**. When the new app passes all release gates and Human authorizes deployment, replace the current production build at the existing origin with the complete new app in one controlled cutover; update `main` to the reviewed release via an approved merge/release action at that time. No earlier merge or production switch.
+- **Source of truth**: source code and this plan on `codex/supabase-app`; GSA Project/Job Memory records are progress/evidence indexes. Do not implement a separate beta transition branch or backport app features to `main` before release. If production requires an urgent independent hotfix before cutover, scope and authorize it separately, then explicitly reconcile compatible changes into the app branch.
 - **Product**: local-first multilingual chunk-based learning, Supabase as optional cloud identity/sync and new AI backend; future native iOS/Android share data contracts and backend with web.
 - **Platform phase boundary (Human decision 2026-10-10)**: current implementation and release are **browser Web** (desktop and mobile browser, including browser-managed mic permission and browser speech APIs). Offline TTS/voice availability, native OS microphone permissions, background audio, audio-session interruptions and installed native voices belong to a **separate later Native App phase**, not Web CP5/CP8. Browser speech can be network-dependent; do not promise offline speech.
 - **Absolute invariants**: (I1) same-origin old beta data remains readable without registration, (I2) no deletion/reset/ID regeneration/loss of training stats in automatic migration, (I3) prompts private at runtime and absent from public frontend/source artifact, (I4) never upload raw diary/corpus without explicit product consent, (I5) user can **only choose a voice** in voice UX—no speed/pitch/quality controls; voice/accent is a property of chosen voice, (I6) cloud failure never prevents local learning.
@@ -18,7 +18,7 @@ Version: 1.2 | Date: 2026-10-10 | Project: GSA P-493D | Status: REPLANNED AFTER 
 - Supabase scaffold includes Auth anonymous session, `user_settings`, `user_progress`, `sync_snapshots`, `generated_chunk_corpus`, and `generate-chunks` Edge Function. RLS for corpus currently lacks UPDATE while client uses upsert. Full snapshot/restore and durable retry are not finished.
 - `tts.ts` presently picks first matching browser voice and forces rate 0.85; `VoiceInput.tsx` is hardcoded to `vi-VN`. Speech scoring estimates text-match, not acoustic pronunciation quality.
 - Existing prompt/response assumes English pivot and `englishNarrative`. English pivot must be preserved for legacy records, but must NOT be a mandatory translation hop for every target language.
-- Existing `docs/migration/BETA_TRANSITION_DESIGN.md` (2026-10-10) supersedes conflicting older transition steps; preserve beta Apps Script until the tested switch.
+- **Direct cutover supersedes the old transitional beta plan** (Human decision 2026-10-10). See `docs/migration/BETA_TRANSITION_DESIGN.md`, now revised as direct-release migration guidance. Current beta keeps its Apps Script unchanged until replacement; **no beta account/sync intermediate release, no separate `codex/beta-account-sync` branch, no mandatory 7-day notice**.
 - **CR evidence**: GSA `VERIFICATION/01a124b6-b154-7908-b376-f97d75c49650.json` independently found 2 CRITICAL and 3 IMPORTANT findings; one offline-native finding is explicitly deferred by Human. The 4 active findings must have owner/surface/test proof before the replacement plan may be declared reviewed.
 
 ## 2. Target architecture and contracts
@@ -94,7 +94,7 @@ PASS: no new private prompt content in public artifacts; no prompt or provider s
 Tasks:
 - M4.1 Bring `supabase/functions/generate-chunks/index.ts` into parity with canonical contract; Edge validates JWT identity, input, per-user quota and output; returns object not JSON-as-string.
 - M4.2 Compare selected real representative diary inputs with legacy Apps Script outputs under consented test data; reviewer judges meaning, semantic-unit coverage, terminology, language naturalness, phonetics.
-- M4.3 Shadow test then opt-in internal mode before activating Supabase generation. Fallback Apps Script for transition ONLY; final new app routes to Supabase only after gates PASS. Ensure no double paid calls on retry.
+- M4.3 Test Supabase generation in local/staging and a controlled nonproduction preview against the existing Apps Script beta as read-only quality reference; **do not deploy an interim Apps Script-to-Supabase hybrid beta**. At the authorized direct cutover, new app uses Supabase generation; retain old beta deployment only as a separately tested recovery option. Ensure no double paid calls on retry.
 - M4.4 Test latency/errors, malformed/empty responses, rate limits, service failure, cancellation; local stories survive failures.
 PASS: schema + quality evaluation PASS, staging quota enforced, rollback switch tested, no changes to production.
 
@@ -117,20 +117,20 @@ Tasks:
 - M6.5 Test two users/two devices, different identities on same browser **sharing identical imported record IDs**, logout, interrupted guest adoption, multi-tab identity change, orphaned pending queue, expired tokens, interrupted link, offline edits, quota, failed restore, double retry; snapshot restore must be reversible.
 PASS: full backup/restore and two-device sync complete without data loss or cross-user access; RLS verified on live staging DB; no silent data upload; fail-safe local experience.
 
-### M7 — User-facing UX + beta transition (depends M1, M5, M6; CP7)
+### M7 — User-facing UX & direct replacement readiness (depends M1, M5, M6; CP7)
 Tasks:
 - M7.1 Account screen: Local only / Pending / Backed up / Failed, Google/email link, manual sync, backup/restore with integrity status. Avoid implying sign-in alone implies backup. Identity switch must hide former account workspace; first claim of unowned beta data offers a transparent preview, consent and cancel option without deletion; show privacy disclosure before first AI generation and explicit independent backup/corpus opt-ins.
 - M7.2 Language selection according to LanguagePack support; voice choice + preview only (no speed/quality/accent selector); persist choice per learning language and platform availability.
-- M7.3 For current beta, prepare **isolated** transition from stable main: account and backup bridge, 7-day notice starting **actual deployment date**. Keep Apps Script for beta AI during transition. Create short-lived `codex/beta-account-sync` from stable baseline ONLY if needed, merge after tests; reconcile resulting main updates back into development branch.
+- M7.3 **No intermediate beta transition**: finish the account/backup/restore/consent UX **inside `codex/supabase-app`** and validate it with main-v4 legacy fixtures and same-origin upgrade tests. Do not create `codex/beta-account-sync`, do not pre-update production `main`, and do not require a 7-day warning period. At the final authorized release, replace the old frontend/backend with the new app at the existing production origin. Optional release notes may explain new features and backups but must not introduce a forced-account/data migration gate.
 - M7.4 Test no-account reading of old data; no forced re-onboarding; no wipe on day 7; user-facing migration wording accurate.
-PASS: end-to-end old-beta-to-new-app via same origin and export/bridge; Account/Backup/Voice UX accepted; no production change without separate approval.
+PASS: simulate **direct same-origin replacement** from old beta build to the new app using a real persisted v4 dataset, without intermediate beta release, without signup, and without losing identity/session/progress; export/import or verified bridge for prior **different-origin** users remains optional and separate. Account/Backup/Voice UX accepted; no production change without separate approval.
 
 ### M8 — Integrated E2E, hardening, native handoff and release (depends M4, M6, M7; CP8)
 Tasks:
 - M8.1 Reviewer audits code **and test scripts** at checkpoints; red/green negative controls, realistic datasets, browser/device QA, security checks, parity fixtures and build.
 - M8.2 Real staging Supabase + Vercel preview tests for existing beta and new users, English + other launch languages, **browser** microphone permission (allow/deny/retry where supported), Web Speech recognition, browser voice availability/fallback, sync failure and recovery; no native OS mic/offline-audio tests. Explicit identity-isolation and identical-ID cross-user cases, stale cloud sync queue on switching, and AI-processing privacy network traces are mandatory.
 - M8.3 Measure data integrity (IDs/counts/stats/checksums), AI quality, TTS listening quality, P50/P95 latency, token/TTS cost, retry rates, consent and privacy. Record explicit acceptance evidence and unresolved items.
-- M8.4 Prepare reversible cutover and rollback: retain beta deployment, export old data before risky schema updates; test rollback build after any IndexedDB version bump. Never roll back by deleting data created after cutover.
+- M8.4 Prepare a **single direct cutover** (not staged beta changes): verify exact new release build on Vercel preview and correct isolated Supabase staging backend, replay real main-v4 same-origin fixture then rehearse full replacement. Obtain explicit Human release approval, then merge/replace `main` with the tested app version and switch the production deployment at existing `https://chunk-diary.vercel.app`. Verify post-release load, auth, AI and data checks. Retain the previous beta deployment as a recovery target, but first test that reverting the frontend can still read any upgraded local DB (IndexedDB VersionError risk) and preserve post-cutover data; use compatible rollback build/export/recovery instead of deleting data. No production change in planning.
 - M8.5 Native handoff **specification only** (shared domain/contracts, local repository + audio adapters, auth deep link/callback); implementation of iOS/Android binaries, native microphone permissions, audio sessions/interruptions/background behavior, platform STT/TTS, installed/offline voices and native-device QA is a later separately approved phase, explicitly **out of scope** of this Web release.
 PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage bugs, real regression tests PASS, human approves release and production cutover.
 
@@ -165,7 +165,8 @@ PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage b
 - VOICE-01: only voice choice shown, supports preview, accent through voice identity; no speed/quality/pitch UI.
 - VOICE-02: desktop/mobile **browser** voice selection, preview, failed/unavailable voice fallback and hard cloud quota cap tested. Offline TTS and native microphone/voice behavior explicitly deferred to Native phase.
 - ACC-01: guest→linked identity and second-device restore without data loss; switch user does not expose previous account.
-- REL-01: preview release E2E + reviewer validation of test scripts, rollback/bridge instructions, human cutover approval.
+- REL-01: **direct cutover rehearsal** old beta → new app at same origin (no beta transition release), full E2E on Vercel preview + staging backend, Reviewer validation of test scripts, safe rollback/bridge instructions and explicit Human cutover approval.
+- REL-02: before replacement, confirm old and new apps share the **same origin** for transparent IndexedDB reuse; if prior users exist at a different origin, prepare their separate voluntary export/import/bridge path. Preserve backup/recovery options without modifying current production during development.
 
 ## 6. Critical path, workflow and checkpoints
 Critical path: M0 → M1 → M2 → M3 → M4 → M8. M5 runs after M2 and may progress alongside M3/M4; M6 starts after M1 and M3; M7 follows M1/M5/M6. Every milestone has one checkpoint CP0–CP8 with real source/evidence hashes. Run focused tests per task; broader reviewer checkpoints at contract changes, DB changes, prompt boundary, security and release—not every trivial commit.
@@ -176,7 +177,7 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - Separate staging vs production Supabase project, keys, prompt store and analytics; audit env variables and token leakage.
 - Web Cloud TTS is optional; implement hard cap and browser-voice/text fallback rather than assuming free indefinitely. Web availability depends on browser, device and network; native/offline voice selection will be assessed in a later Native phase.
 - Structured operations logging only: request ID, contract/prompt version, error category, metrics and timing; never diary text, private prompt, credential, full provider error or raw audio without consent.
-- No production switch, merge to `main`, RLS migration on production or public DNS change without explicit Human approval and verified rollback/restore evidence.
+- Keep production `main` untouched through development. **Only after** full E2E, security/privacy/data release gates and explicit Human approval, perform one controlled final merge/replacement of `main` and production deployment. No intermediate beta feature patch, seven-day staging countdown or forced user migration. No production RLS deployment or DNS change without separate authorization and verified rollback/restore evidence.
 
 ## 8. Pending decisions to resolve within M0 (not implementation blockers)
 - Which launch languages are fully supported vs marked experimental, and human language reviewers/fixtures.
@@ -188,5 +189,7 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 **CR disposition v1.2 (2026-10-10):** CR-01 local-account isolation → M0.4/M1.2a/M6.3/M6.5/M7.1, DATA-07/08. CR-02 global SQL ID conflict → M6.4, SEC-02. CR-03 `server.ts` prompt exposure → M3.1/M3.5 and file map, PRIV-01. CR-04 AI processing vs persistent backup consent → M0.5/M3.2a/M6.2/M7.1, PRIV-02/03. CR-05 offline voice → **DEFERRED**, independent Native phase as explicitly instructed by Human (no Web release gate). These are planned remediations, **not implemented fixes**; each requires execution evidence and Tester/Reviewer checks at CP1, CP3, CP6 and CP8.
 
 **Traceability / ownership:** CR-01 owner M1 (local repository) + M6 (Auth/Sync); CR-02 owner M6 (SQL/RLS); CR-03 owner M3 (AI privacy); CR-04 owner M3 (privacy contract) + M6 (sync) + M7 (UX notice). M0 freezes evidence/consent/identity contracts first. No other repository write scope. Phase Web = UX_FIRST, reuse current shell for temporary UI; frontend tasks require ui-coder-frontend. Changes to consent texts, legacy data assignment or production cutover are Human Gates.
+
+**Release decision v1.3 (Human 2026-10-10):** the complete new app must read and preserve existing beta user data directly. Development stays solely on `codex/supabase-app`. Remove beta-transition account/sync patch, `codex/beta-account-sync` and 7-day release countdown from the execution topology. M1 verifies old data compatibility before the **single final replacement**, and M8 governs that replacement with release approval and safe rollback. No change to `main` until then.
 
 **Document scope**: actionable master roadmap. It does not authorize implementation, deployment or release by itself.
