@@ -274,7 +274,9 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      // Locked to user-approved lower-cost model for the staging experiment.\n      // Ignore any stale GEMINI_MODEL secret that could silently select 3.8.\n      model: DEFAULT_GEMINI_MODEL,
+      // Locked to the user-approved Flash preview model for this test.
+      // Ignore any older GEMINI_MODEL override.
+      model: DEFAULT_GEMINI_MODEL,
       contents: JSON.stringify(input),
       config: {
         systemInstruction: privatePrompt,
