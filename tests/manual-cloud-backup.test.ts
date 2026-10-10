@@ -24,16 +24,23 @@ function clientMock() {
     auth: {
       getUser: async () => ({ data: { user: identity }, error: null }),
     },
+    rpc: async (name: string, args: {
+      p_payload: { ownerUserId: string; backup: {checksum: string} };
+      p_expected_checksum: string | null;
+    }) => {
+      assert.equal(name, "chunkdiary_snapshot_cas_write");
+      assert.equal(args.p_payload.ownerUserId, A);
+      const previous = (payload as typeof args.p_payload | null)?.backup.checksum ?? null;
+      if (previous !== args.p_expected_checksum) {
+        return { data: { allowed: false, reason: "CONFLICT" }, error: null };
+      }
+      writes++;
+      payload = args.p_payload;
+      return { data: { allowed: true, checksum: args.p_payload.backup.checksum }, error: null };
+    },
     from: (table: string) => {
       assert.equal(table, "sync_snapshots", "must not access arbitrary tables");
       return {
-        upsert: async (row: { user_id: string; payload: unknown }, options: {onConflict: string}) => {
-          assert.equal(row.user_id, A);
-          assert.equal(options.onConflict, "user_id");
-          writes++;
-          payload = row.payload;
-          return { error: null };
-        },
         select: (column: string) => {
           assert.equal(column, "payload");
           return {
@@ -92,6 +99,12 @@ test("M6: manual owner backup has complete current changes, never uploads automa
   const receipt=await uploadManualCloudBackup(mock.client,A,backup,{confirmed:true});
   assert.equal(mock.writes,1);
   assert.equal(receipt.checksum,backup.checksum);
+  await assert.rejects(uploadManualCloudBackup(mock.client,A,backup,{confirmed:true}),/CONFLICT/);
+  assert.equal(mock.writes,1,"a second device cannot blind-overwrite existing cloud backup");
+  await uploadManualCloudBackup(mock.client,A,backup,{
+    confirmed:true, expectedRemoteChecksum:backup.checksum,
+  });
+  assert.equal(mock.writes,2,"a consented matching-CAS replacement succeeds");
   const seen=await inspectManualCloudBackup(mock.client,A);
   assert.equal(seen.backup.checksum,backup.checksum);
   assert.equal(seen.preview.canImport,false,"nonempty destination refuses overwrite");
