@@ -92,3 +92,10 @@ export function selectedWorkspaceUser(storage: Pick<Storage, "getItem">): string
 }
 
 export const ACTIVE_WORKSPACE_KEY = PREF_KEY;
+
+/** Remembered linked account could not be verified. The app must display
+ * an explicit owner choice rather than silently opening beta Local data.
+ */
+export function requiresExplicitLocalChoice(storage: Pick<Storage, "getItem">): boolean {
+  return selectedWorkspaceUser(storage) !== null && activeAccount === null;
+}
