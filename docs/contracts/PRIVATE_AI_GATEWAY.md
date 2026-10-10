@@ -33,3 +33,13 @@ Do not paste secret values into ChatGPT. Configure secrets directly in the Supab
 ## Processing notice
 
 StoryChat now asks before **each** transient AI generation request. Accepting this action authorizes third-party model processing of the selected diary text, **not** persistent cloud backup or corpus sharing. Provider subprocessors/retention and finalized consent language still require legal/product review before production release.
+
+## 2026-10-10 staging checkpoint after operator secret setup
+
+- Human confirmed that `CHUNKDIARY_PROMPT_V2` and `CHUNKDIARY_PROMPT_VERSION` were saved using Supabase's Edge Functions Secrets UI, following prior `GEMINI_API_KEY` setup. **The connector cannot list or reveal Edge secret values, so this is operator confirmation, not a successful provider handshake.** Never copy secret contents to repository, CI logs or chat.
+- Exact source in `codex/supabase-app` deployed to the dedicated Chunkdiary development project as `generate-chunks` **v4**, `verify_jwt=true`. Source matches deployed function at the deployment checkpoint.
+- The Edge validator now rejects fabricated semantic-group IDs, handles German/Italian locale aliases, requires an actual UUID request ID, and checks for private provider configuration **before reserving quota**. Requests still require verified JWT identity and the server-only quota RPC.
+- Staging SQL rollback test `tests/sql/owner_rls.sql` passed for all four public tables, including account A/B isolation and identical user-owned record IDs. All synthetic auth users and rows were rolled back. Quota stays `enabled=false`.
+- GitHub Actions [M3 staging security checks](https://github.com/thebimhouseinfo-sudo/chunk-diary/actions/runs/38050205458) passed Edge typecheck, eight hermetic negative-control tests, server compilation, and a **live staging invalid-JWT rejection** without provider traffic. Supabase Security Advisor has zero WARN/ERROR notices, with only expected INFO for policy-free private quota tables.
+- **NOT YET PASS:** live Gemini response quality, actual billing/quota enforcement with a real Auth JWT, confirmation of secret presence in Edge runtime, production-quality Thai/other unsupported locale coverage, end-to-end authenticated frontend generation, or final release. No production merge/deploy and no paid Gemini call.
+- For **one controlled synthetic provider smoke test only**, prepare a valid staging Auth identity, set quota's private per-user/global cap to exactly one invocation, have the operator temporarily enable `CHUNKDIARY_AI_ENABLED=true` as a Supabase Edge secret, run a bounded synthetic-data test, then disable both gate and quota. Do not assume that saving a prompt secret enabled paid calls.
