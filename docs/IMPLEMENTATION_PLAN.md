@@ -1,3 +1,8 @@
+> **LƯU Ý — KẾ HOẠCH LỊCH SỬ / KHÔNG THỰC THI (2026-10-10)**
+> Tài liệu này được giữ làm tham khảo lịch sử và có nhiều chỉ dẫn **đã bị thay thế** (ví dụ tự động gom dữ liệu ghost user, nhánh `feat/supabase-vercel`, hay quy trình beta trung gian).
+> **Source of truth hiện tại:** [APP_DEVELOPMENT_PLAN.md v1.3](./APP_DEVELOPMENT_PLAN.md) và [thiết kế direct cutover](./migration/BETA_TRANSITION_DESIGN.md).
+> Phát triển **chỉ trên `codex/supabase-app`**; giữ `main` nguyên đến khi hoàn thiện, kiểm thử và được phê duyệt thay thế production. Không tự upload nhật ký local hoặc gán ownership cho tài khoản khi chưa có consent.
+
 # KẾ HOẠCH TRIỂN KHAI (IMPLEMENTATION PLAN)
 ## Chuyển đổi sang Vercel & Supabase Backend (Bảo toàn Dữ liệu User & Ghost User)
 
