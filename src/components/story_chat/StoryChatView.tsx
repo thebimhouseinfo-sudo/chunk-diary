@@ -13,7 +13,8 @@ import { StoryService } from "./servises/storyService";
 import { useIdleTimer } from "./hooks/useIdleTimer";
 import { callGenerateChunks, MAX_DIARY_CONTENT_LENGTH } from "../../utils/aiService";
 import { UserSettings, Chunk, MeaningUnit } from "../../types";
-import { saveMeaningUnitsAndChunks } from "../../db/indexedDb";
+import { openDB, saveMeaningUnitsAndChunks } from "../../db/indexedDb";
+import { workspaceLocalKey } from "../../db/workspaceRouter";
 import { getSettings } from "../../db/userDb";
 import { speakText } from "../../utils/tts";
 import { Sparkles, MessageSquare, History, BookOpen, Volume2, Play, ArrowRight } from "lucide-react";
@@ -23,11 +24,7 @@ import { saveUserTargetProgress } from "../../db/userProgressDb";
 import { MAX_STORY_MESSAGE_LENGTH } from "./constants";
 
 async function getDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open("LanguageChunkDiaryDB");
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  return openDB();
 }
 
 async function addDiary(diary: any): Promise<string> {
@@ -144,7 +141,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
     // Ensure summary view is off by default when initializing a new session or after onboarding
     setIsSummaryView(false);
 
-    const savedSettings = localStorage.getItem("story_chat_settings");
+    const savedSettings = localStorage.getItem(workspaceLocalKey("story_chat_settings"));
     if (savedSettings) {
       const parsed = JSON.parse(savedSettings);
       setSettings(parsed);
@@ -154,7 +151,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
     const userProfileData = await getSettings();
     setUserProfile(userProfileData);
 
-    const isFirstTimeSeen = localStorage.getItem("story_chat_has_seen_first_greeting") === "true";
+    const isFirstTimeSeen = localStorage.getItem(workspaceLocalKey("story_chat_has_seen_first_greeting")) === "true";
     const isFirstTime = !isFirstTimeSeen;
 
     const active = await StoryService.getActiveSession();
@@ -198,7 +195,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
         };
         setMessages([firstGreeting]);
         if (isFirstTime) {
-          localStorage.setItem("story_chat_has_seen_first_greeting", "true");
+          localStorage.setItem(workspaceLocalKey("story_chat_has_seen_first_greeting"), "true");
         }
       }
 
@@ -211,7 +208,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
       };
       setMessages([firstGreeting]);
       if (isFirstTime) {
-        localStorage.setItem("story_chat_has_seen_first_greeting", "true");
+        localStorage.setItem(workspaceLocalKey("story_chat_has_seen_first_greeting"), "true");
       }
       await StoryService.saveSession({
         id: "active",
@@ -267,7 +264,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
   const handleUpdateSettings = (newSettings: Partial<StorySettings>) => {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
-    localStorage.setItem("story_chat_settings", JSON.stringify(updated));
+    localStorage.setItem(workspaceLocalKey("story_chat_settings"), JSON.stringify(updated));
     if (newSettings.defaultInputMode) {
       setInputMode(newSettings.defaultInputMode);
     }
