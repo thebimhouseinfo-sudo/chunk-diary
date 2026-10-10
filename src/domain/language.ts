@@ -23,6 +23,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
   { locale: "ko-KR", baseLanguage: "ko", label: "Korean", nativeLabel: "한국어", phonetics: "hangul", tokenization: "korean", levels: "TOPIK" },
   { locale: "es-ES", baseLanguage: "es", label: "Spanish", nativeLabel: "Español", phonetics: "ipa", tokenization: "word", levels: "CEFR" },
   { locale: "fr-FR", baseLanguage: "fr", label: "French", nativeLabel: "Français", phonetics: "ipa", tokenization: "word", levels: "CEFR" },
+  { locale: "de-DE", baseLanguage: "de", label: "German", nativeLabel: "Deutsch", phonetics: "ipa", tokenization: "word", levels: "CEFR" },
+  { locale: "it-IT", baseLanguage: "it", label: "Italian", nativeLabel: "Italiano", phonetics: "ipa", tokenization: "word", levels: "CEFR" },
 ] as const;
 
 const legacyAliases: Record<string, string> = {
@@ -33,6 +35,8 @@ const legacyAliases: Record<string, string> = {
   ko: "ko-KR", kr: "ko-KR", korean: "ko-KR",
   es: "es-ES", spanish: "es-ES",
   fr: "fr-FR", french: "fr-FR",
+  de: "de-DE", german: "de-DE",
+  it: "it-IT", italian: "it-IT",
 };
 
 export function canonicalLanguageTag(input: string): string {
