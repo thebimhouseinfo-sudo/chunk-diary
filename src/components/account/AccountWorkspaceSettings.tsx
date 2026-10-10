@@ -287,7 +287,7 @@ export default function AccountWorkspaceSettings() {
                   <p className="text-xs text-slate-500">
                     Chỉ lưu trên thiết bị khi lỗi mạng; không tự động upload lại.
                   </p>
-                  <button type="button" disabled={busy || queued.retryAfter > Date.now()}
+                  <button type="button" disabled={busy}
                     onClick={onRetryQueuedBackup}
                     className="w-full rounded-xl bg-slate-200 p-2 text-sm font-bold disabled:opacity-50">
                     Thử lại bản sao đang chờ
