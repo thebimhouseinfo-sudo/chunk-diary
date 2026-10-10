@@ -763,6 +763,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
             <VoiceInput
               onTranscriptionStart={handleTranscriptionStart}
               onTranscriptionEnd={handleTranscriptionEnd}
+              sourceLanguage={userProfile?.nativeLanguage || "Vietnamese"}
               onSwitchMode={() => setInputMode("typing")}
               micStatus={micStatus}
               onRequestMic={requestMic}
