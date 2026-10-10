@@ -26,7 +26,7 @@ export async function getActiveSession(): Promise<StorySession | null> {
   const db = await openStoryDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(sessionStoreName(), "readonly");
-    const store = tx.objectStore("sessions");
+    const store = tx.objectStore(sessionStoreName());
     const request = store.get("active"); // Direct single-key retrieval
     request.onsuccess = () => {
       resolve((request.result as StorySession) || null);
@@ -39,7 +39,7 @@ export async function saveSession(session: StorySession): Promise<void> {
   const db = await openStoryDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(sessionStoreName(), "readwrite");
-    const store = tx.objectStore("sessions");
+    const store = tx.objectStore(sessionStoreName());
     const request = store.put({ ...session, id: "active" }); // Ensure single key "active"
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
@@ -50,7 +50,7 @@ export async function clearActiveSession(): Promise<void> {
   const db = await openStoryDB();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(sessionStoreName(), "readwrite");
-    const store = tx.objectStore("sessions");
+    const store = tx.objectStore(sessionStoreName());
     const request = store.delete("active"); // True deletion of the active session record
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
