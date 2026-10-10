@@ -1,0 +1,39 @@
+name: M5 Browser Voice Selection
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'src/utils/tts.ts'
+      - 'src/domain/language.ts'
+      - 'src/components/SettingsView.tsx'
+      - 'src/components/story_chat/StoryChatView.tsx'
+      - 'src/components/story_chat/components/VoiceInput.tsx'
+      - 'tests/browser-voice.test.ts'
+      - 'docs/contracts/WEB_VOICE_V1.md'
+      - '.github/workflows/m5-web-voice.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install lockfile dependencies
+        run: npm ci
+      - name: Install type-check test-only dependencies
+        run: npm install --no-save --package-lock=false playwright@1.56.1 fake-indexeddb@6.2.5
+      - name: Type-check
+        run: npm run lint
+      - name: Build web app
+        run: npm run build
+      - name: Browser voice contract tests
+        run: node --import tsx --test tests/browser-voice.test.ts
