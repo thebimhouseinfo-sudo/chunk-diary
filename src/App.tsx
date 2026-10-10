@@ -8,6 +8,8 @@ import { Library, Home, Settings, PenLine, Volume2, Gamepad2, Layers } from "luc
 import { preseedDatabaseIfEmpty } from "./db/indexedDb";
 import { loadVoices } from "./utils/tts";
 import { Chunk } from "./types";
+import { supabase } from "./services/supabase/client";
+import { ACTIVE_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting } from "./db/workspaceRouter";
 
 // Views
 import HomeView from "./components/HomeView";
@@ -27,7 +29,16 @@ export default function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Pre-seed default database with welcome entry and starter chunks
+        // Resolve a remembered linked account against VERIFIED Supabase Auth.
+        // Never display a cached foreign account database after sign-out.
+        await initializeWorkspaceRouting(async () => {
+          if (!supabase) return null;
+          const { data, error } = await supabase.auth.getUser();
+          if (error || !data.user) return null;
+          return { id: data.user.id, isAnonymous: Boolean(data.user.is_anonymous) };
+        }, localStorage);
+        // Pre-seed the selected, owner-scoped store only. Local beta stays untouched
+        // when an account is selected, and vice versa.
         await preseedDatabaseIfEmpty();
         // Load voices for SpeechSynthesis
         loadVoices();
@@ -38,6 +49,27 @@ export default function App() {
       }
     };
     initializeApp();
+  }, []);
+
+  useEffect(() => {
+    // Other tabs may sign out / switch accounts. Never retain old owner data
+    // on screen after identity changes. Force re-verification on a new boot.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === ACTIVE_WORKSPACE_KEY) window.location.reload();
+    };
+    window.addEventListener("storage", onStorage);
+    const { data: authSubscription } = supabase?.auth.onAuthStateChange((event, session) => {
+      const active = activeWorkspaceOwner();
+      if (active?.kind === "account" &&
+          (event === "SIGNED_OUT" || (session?.user.id && session.user.id !== active.userId))) {
+        chooseLocalWorkspace(localStorage);
+        window.location.reload();
+      }
+    }) ?? { data: { subscription: null } };
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      authSubscription.subscription?.unsubscribe();
+    };
   }, []);
 
   const handleStartPractice = async (chunks: Chunk[]) => {
