@@ -115,3 +115,33 @@ test("M6 queue: account switching during RPC cannot mark another account synced"
   assert.equal(state?.status,"pending","A queue not changed by B's session");
   assert.equal(state?.leaseToken!==null,true);
 });
+
+
+test("M6 idempotency: lost first RPC response + matching remote checksum finishes without reupload",async()=>{
+  const {factory,backup}=await fixture();
+  await enqueueBackup(A,backup,null,{confirmed:true,indexedDB:factory,now:1000});
+  let attempts=0, reads=0;
+  const client={
+    auth:{getUser:async()=>({data:{user:{id:A,is_anonymous:false}},error:null})},
+    rpc:async()=>{
+      attempts++;
+      return {data:{allowed:false,reason:"CONFLICT"},error:null};
+    },
+    from:(table:string)=>{
+      assert.equal(table,"sync_snapshots");
+      return { select:(_cols:string)=>({eq:(_key:string,_id:string)=>({
+        maybeSingle:async()=>{
+          reads++;
+          return {data:{payload:{
+            format:"chunkdiary.account.cloud-backup",version:1,ownerUserId:A,backup,
+          }},error:null};
+        },
+      })})};
+    },
+  } as unknown as SupabaseClient;
+  const result=await sendQueuedBackup(client,A,{indexedDB:factory,now:2000});
+  assert.equal(result.status,"synced");
+  assert.equal(attempts,1,"only one write attempt");
+  assert.equal(reads,1,"only one safe owner-scoped readback");
+  assert.equal((await inspectBackupQueue(A,factory))?.backup,null);
+});
