@@ -73,6 +73,21 @@ function openScoped(factory: IDBFactory, name: string, create: boolean): Promise
     };
   });
 }
+/**
+ * Open (or create) an owner-scoped workspace for NORMAL application CRUD.
+ * This is deliberately separate from one-shot, empty-only backup imports.
+ * Never allows read/write access based on an unverified arbitrary user ID:
+ * the runtime router verifies identity before choosing the owner.
+ */
+export async function openAccountWorkspace(
+  userId: string, factory: IDBFactory = indexedDB,
+): Promise<IDBDatabase> {
+  const name = workspaceDatabaseName({ kind: "account", userId });
+  const db = await openScoped(factory, name, true);
+  if (!db) throw new Error("Could not open account workspace");
+  return db;
+}
+
 function countRecords(db: IDBDatabase): Promise<number> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([...WORKSPACE_STORES], "readonly");
