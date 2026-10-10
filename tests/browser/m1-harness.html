@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>ChunkDiary M1 storage test harness</title></head>
+  <body>
+    <p>Isolated M1 test harness. This page does not contact production or cloud storage.</p>
+    <script type="module">
+      import { captureLegacyBackup, validateLegacyBackup } from "/src/db/legacySnapshot.ts";
+      import {
+        previewScopedImport, importIntoScopedWorkspace,
+        verifyScopedImport, workspaceDatabaseName,
+      } from "/src/db/scopedWorkspace.ts";
+      window.m1 = {
+        captureLegacyBackup, validateLegacyBackup,
+        previewScopedImport, importIntoScopedWorkspace,
+        verifyScopedImport, workspaceDatabaseName,
+      };
+      window.m1Ready = true;
+    </script>
+  </body>
+</html>
