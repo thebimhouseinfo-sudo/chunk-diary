@@ -56,9 +56,10 @@ Deno.test("M3: authenticated user still fails closed when rollout disabled, no d
   }) as typeof fetch;
   try {
     const response = await handleRequest(request(validBody, true));
-    assert(response.status === 503 && await code(response) === "CONFIGURATION_ERROR", "must fail closed");
+    const body = await response.text();
+    assert(response.status === 503 && JSON.parse(body).error.code === "CONFIGURATION_ERROR", "must fail closed");
     assert(calls === 1, "only Auth verification should occur");
-    assert(!(await response.clone().text()).includes(validBody.diaryContent), "diary content leaked");
+    assert(!body.includes(validBody.diaryContent), "diary content leaked");
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of [
