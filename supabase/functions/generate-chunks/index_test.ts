@@ -1,4 +1,4 @@
-import { handleRequest } from "./index.ts";
+import { handleRequest, validateResponse } from "./index.ts";
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -72,11 +72,14 @@ Deno.test("M3: authenticated user still fails closed when rollout disabled, no d
 
 Deno.test("M3: missing quota RPC denies even when rollout flag is true", async () => {
   const originalFetch = globalThis.fetch;
-  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED"] as const;
+  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED", "GEMINI_API_KEY", "CHUNKDIARY_PROMPT_V2", "CHUNKDIARY_PROMPT_VERSION"] as const;
   const prev = vars.map((key) => Deno.env.get(key));
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
   Deno.env.set("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_mock");
   Deno.env.set("CHUNKDIARY_AI_ENABLED", "true");
+  Deno.env.set("GEMINI_API_KEY", "test-only-not-a-real-key");
+  Deno.env.set("CHUNKDIARY_PROMPT_V2", "fake prompt for tests");
+  Deno.env.set("CHUNKDIARY_PROMPT_VERSION", "v2-test");
   Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "service_role_test_only_secret");
   const urls: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -96,12 +99,15 @@ Deno.test("M3: missing quota RPC denies even when rollout flag is true", async (
 
 Deno.test("M4: quota claim is service-only and pins user to verified token", async () => {
   const originalFetch = globalThis.fetch;
-  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED"] as const;
+  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED", "GEMINI_API_KEY", "CHUNKDIARY_PROMPT_V2", "CHUNKDIARY_PROMPT_VERSION"] as const;
   const previous = vars.map((key) => Deno.env.get(key));
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
   Deno.env.set("SUPABASE_PUBLISHABLE_KEY", "test_publishable_only");
   Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "server_only_test_key");
   Deno.env.set("CHUNKDIARY_AI_ENABLED", "true");
+  Deno.env.set("GEMINI_API_KEY", "test-only-not-a-real-key");
+  Deno.env.set("CHUNKDIARY_PROMPT_V2", "fake prompt for tests");
+  Deno.env.set("CHUNKDIARY_PROMPT_VERSION", "v2-test");
   let checked = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -128,4 +134,68 @@ Deno.test("M4: quota claim is service-only and pins user to verified token", asy
     for (let i = 0; i < vars.length; i++) previous[i] == null
       ? Deno.env.delete(vars[i]) : Deno.env.set(vars[i], previous[i]!);
   }
+});
+
+Deno.test("M4: missing private prompt denies request BEFORE consuming quota", async () => {
+  const originalFetch = globalThis.fetch;
+  const vars = [
+    "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY",
+    "CHUNKDIARY_AI_ENABLED", "GEMINI_API_KEY", "CHUNKDIARY_PROMPT_V2",
+    "CHUNKDIARY_PROMPT_VERSION",
+  ] as const;
+  const saved = vars.map((k) => Deno.env.get(k));
+  Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
+  Deno.env.set("SUPABASE_PUBLISHABLE_KEY", "test_pub");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test_service");
+  Deno.env.set("CHUNKDIARY_AI_ENABLED", "true");
+  Deno.env.set("GEMINI_API_KEY", "test_key");
+  Deno.env.set("CHUNKDIARY_PROMPT_VERSION", "v2-test");
+  Deno.env.delete("CHUNKDIARY_PROMPT_V2");
+  let calls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls++;
+    if (!String(input).endsWith("/auth/v1/user")) throw new Error("quota was consumed or provider reached");
+    return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+  }) as typeof fetch;
+  try {
+    const response = await handleRequest(request(validBody, true));
+    assert(response.status === 503 && await code(response) === "CONFIGURATION_ERROR",
+      "incomplete provider config must fail closed");
+    assert(calls === 1, "only Auth should be checked");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (let i = 0; i < vars.length; i++) saved[i] == null
+      ? Deno.env.delete(vars[i]) : Deno.env.set(vars[i], saved[i]!);
+  }
+});
+
+Deno.test("M4: group IDs must match caller's known groups, not fabricated by model", () => {
+  const candidate = {
+    contractVersion: "2",
+    narrative: "私は本を読みました。",
+    semanticUnits: [{
+      order: 1, sourceText: "Tôi đã đọc sách.",
+      commonChunks: [{
+        targetText: "本を読みました", meaning: "đã đọc sách",
+        semanticGroupId: "invented-model-id", proposedCanonicalMeaning: "",
+      }],
+      personalizedChunks: [],
+    }],
+  };
+  let rejected = false;
+  try { validateResponse(candidate, "vi-VN", "ja-JP", ["actual-id"]); }
+  catch { rejected = true; }
+  assert(rejected, "fabricated model group ID must be rejected");
+  candidate.semanticUnits[0].commonChunks[0].semanticGroupId = "actual-id";
+  assert(validateResponse(candidate, "vi-VN", "ja-JP", ["actual-id"]).contractVersion === "2",
+    "valid known group ID should succeed");
+});
+
+Deno.test("M4: authenticated API request UUID format, German/Italian locales", async () => {
+  const malformed = await handleRequest(request({ ...validBody, requestId: "----" }));
+  assert(malformed.status === 400, "malformed requestId rejected before Auth");
+  const italian = await handleRequest(request({ ...validBody, targetLanguage: "Italian" }));
+  assert(italian.status === 401, "Italian now accepted and reaches Auth");
+  const german = await handleRequest(request({ ...validBody, targetLanguage: "German" }));
+  assert(german.status === 401, "German now accepted and reaches Auth");
 });
