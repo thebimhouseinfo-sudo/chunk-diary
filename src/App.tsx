@@ -9,7 +9,7 @@ import { preseedDatabaseIfEmpty } from "./db/indexedDb";
 import { loadVoices } from "./utils/tts";
 import { Chunk } from "./types";
 import { supabase } from "./services/supabase/client";
-import { ACTIVE_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting } from "./db/workspaceRouter";
+import { ACTIVE_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting, requiresExplicitLocalChoice, resetWorkspaceRuntime } from "./db/workspaceRouter";
 
 // Views
 import HomeView from "./components/HomeView";
@@ -23,6 +23,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("home");
   const [practiceQueue, setPracticeQueue] = useState<Chunk[]>([]);
   const [isDbReady, setIsDbReady] = useState(false);
+  const [workspaceSuspended, setWorkspaceSuspended] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const isStoryChat = activeTab === "story_chat";
 
@@ -37,6 +38,12 @@ export default function App() {
           if (error || !data.user) return null;
           return { id: data.user.id, isAnonymous: Boolean(data.user.is_anonymous) };
         }, localStorage);
+        if (requiresExplicitLocalChoice(localStorage)) {
+          // Do not silently reveal unscoped beta content after a linked account
+          // expires, the network is offline, or the tab switches to another ID.
+          setWorkspaceSuspended(true);
+          return;
+        }
         // Pre-seed the selected, owner-scoped store only. Local beta stays untouched
         // when an account is selected, and vice versa.
         if (activeWorkspaceOwner()?.kind !== "account") {
@@ -67,7 +74,7 @@ export default function App() {
       const active = activeWorkspaceOwner();
       if (active?.kind === "account" &&
           (event === "SIGNED_OUT" || (session?.user.id && session.user.id !== active.userId))) {
-        chooseLocalWorkspace(localStorage);
+        resetWorkspaceRuntime();
         window.location.reload();
       }
     }) ?? { data: { subscription: null } };
@@ -98,6 +105,33 @@ export default function App() {
     { id: "chunks", label: "Chunks", icon: <Library size={20} /> },
     { id: "settings", label: "Cài đặt", icon: <Settings size={20} /> }
   ];
+
+  if (workspaceSuspended) {
+    return (
+      <div className="min-h-screen bg-vibrant-bg flex items-center justify-center p-5">
+        <section className="max-w-lg bg-white rounded-[2rem] border shadow-sm p-7 space-y-4">
+          <h2 className="text-lg font-black text-slate-900">Cần xác minh lại tài khoản</h2>
+          <p className="text-sm text-slate-600">
+            Không thể xác minh tài khoản từng được chọn (có thể mất mạng,
+            đăng xuất hoặc đổi tài khoản). Dữ liệu của tài khoản vẫn ở riêng
+            trên thiết bị và chưa bị xóa.
+          </p>
+          <button className="w-full rounded-xl bg-vibrant-indigo text-white p-3 font-bold"
+            onClick={() => window.location.reload()}>
+            Thử xác minh lại
+          </button>
+          <button className="w-full rounded-xl border p-3 font-bold"
+            onClick={() => {
+              if (!window.confirm("Chỉ mở dữ liệu Local beta? Workspace tài khoản không bị xóa.")) return;
+              chooseLocalWorkspace(localStorage);
+              window.location.reload();
+            }}>
+            Chọn chế độ Local beta
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   if (initError) {
     return (
