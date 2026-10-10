@@ -1,13 +1,18 @@
 import { Chunk, UserSettings, PurchasedPackage } from "../../types";
-import { getUserRestorePackage } from "../../db/userProgressDb";
-import { restoreProgressFromCloud, syncGeneratedChunksToCorpus, syncProgressToCloud, syncSettingsToCloud } from "../supabase/cloudSync";
 
 /**
- * Cloud Sync Adapter Abstraction.
- * Provides clean plug-and-play methods for future cloud sync (e.g. Supabase, Firebase, REST API)
- * without requiring any UI component code changes.
+ * Cloud data persistence is deliberately disabled until ChunkDiary has:
+ * - explicit and separate BACKUP_SYNC / CORPUS_SHARE consent;
+ * - verified account-scoped local storage and Supabase RLS;
+ * - ownership-pinned retry queues that cannot cross account switches.
+ *
+ * The existing legacy unscoped stores must NEVER be uploaded with the
+ * current anonymous Supabase session. Returning false is a fail-closed
+ * compatibility boundary, not a claim of successful cloud sync.
+ *
+ * M6 must replace this temporary guard with a consent-aware adapter, test
+ * the backend access controls and only then expose a manual Sync action.
  */
-
 export interface CloudSyncAdapter {
   syncUserProfile(profile: UserSettings): Promise<boolean>;
   syncUserProgress(): Promise<boolean>;
@@ -15,35 +20,20 @@ export interface CloudSyncAdapter {
   syncGeneratedChunks?(chunks: Chunk[]): Promise<boolean>;
 }
 
-/**
- * Default Local/Mock Adapter implementation.
- * Prepares the payload for online sync when cloud backend is attached.
- */
 export class DefaultCloudSyncAdapter implements CloudSyncAdapter {
-  async syncUserProfile(profile: UserSettings): Promise<boolean> {
-    const synced = await syncSettingsToCloud(profile);
-    if (!synced) console.log("[CloudSyncAdapter] Supabase is not configured; profile remains local.");
-    return synced;
+  async syncUserProfile(_profile: UserSettings): Promise<boolean> {
+    return false;
   }
 
   async syncUserProgress(): Promise<boolean> {
-    const records = await getUserRestorePackage();
-    if (records.length === 0) return true;
-    const synced = await syncProgressToCloud();
-    if (!synced) console.log(`[CloudSyncAdapter] Supabase is not configured; ${records.length} learning records remain local.`);
-    return synced;
+    return false;
   }
 
-  async syncGeneratedChunks(chunks: Chunk[]): Promise<boolean> {
-    const synced = await syncGeneratedChunksToCorpus(chunks);
-    if (!synced) console.log(`[CloudSyncAdapter] Supabase is not configured; ${chunks.length} generated chunks remain local.`);
-    return synced;
+  async syncGeneratedChunks(_chunks: Chunk[]): Promise<boolean> {
+    return false;
   }
 
-  async downloadPurchasedPackage(packageId: string): Promise<PurchasedPackage | null> {
-    if (packageId === "user-progress") {
-      await restoreProgressFromCloud();
-    }
+  async downloadPurchasedPackage(_packageId: string): Promise<PurchasedPackage | null> {
     return null;
   }
 }
