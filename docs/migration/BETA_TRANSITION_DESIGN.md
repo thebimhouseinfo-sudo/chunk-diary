@@ -1,9 +1,11 @@
 # Thiết kế thay thế beta bằng Supabase App — Direct Cutover
 
-Ngày: 2026-10-10. Phiên bản: 2.0. Trạng thái: **thiết kế cho phát hành thay thế, chưa triển khai production**.
-Kế hoạch thực thi chi tiết và ưu tiên cao hơn: [APP_DEVELOPMENT_PLAN.md](../APP_DEVELOPMENT_PLAN.md) v1.3.
+Ngày: 2026-10-10. Phiên bản: 2.1. Trạng thái: **CHỈ ÁP DỤNG SAU KHI PHÁT TRIỂN XONG TOÀN BỘ APP VÀ KIỂM THỬ HOÀN TẤT**.
+Kế hoạch thực thi chính: [APP_DEVELOPMENT_PLAN.md](../APP_DEVELOPMENT_PLAN.md) v1.4.
 
-## Quyết định mới: chỉ phát hành khi toàn bộ app đã sẵn sàng
+**Điều chỉnh thứ tự theo yêu cầu Human:** Không có bất kỳ hoạt động migrate, merge, cherry-pick hoặc cập nhật ứng dụng từ `codex/supabase-app` sang `main` trong khi phát triển. Tài liệu release này chỉ được dùng ở **bước cuối M8**, sau khi app đa ngôn ngữ, AI, giọng đọc, tài khoản, backup/restore, sync và UI đã phát triển đủ, E2E/Reviewer PASS và Human duyệt riêng. Mọi kiểm thử beta v4/source cutover trên CI trước đó chỉ là test tương thích trong môi trường cô lập, không phải triển khai chuyển đổi.
+
+## Quyết định: phát triển xong, test xong, rồi mới tích hợp vào main
 
 Theo quyết định của Human ngày 2026-10-10:
 
@@ -11,16 +13,16 @@ Theo quyết định của Human ngày 2026-10-10:
 - `codex/supabase-app` là **nhánh tích hợp phát triển chính**, chứa toàn bộ thay đổi frontend, Supabase, AI đa ngôn ngữ, bảo vệ prompt, Voice và backup/sync.
 - **Không triển khai beta chuyển tiếp trên main**; không tạo nhánh `codex/beta-account-sync`, không vá tính năng account/backup vào production trước, **không có giai đoạn bắt buộc thông báo 7 ngày**.
 - Bản beta hiện tại tiếp tục dùng backend Google Apps Script như cũ, không chỉnh sửa vì nhu cầu chuyển đổi; app mới phải loại bỏ phụ thuộc Apps Script khi phát hành.
-- Sau khi nhánh app mới vượt qua data migration, security, AI, browser voice và E2E release gates, chỉ khi có **phê duyệt phát hành rõ ràng của Human**, mới merge/replace `main` bằng bản ứng dụng mới đã kiểm thử và thay thế deployment production trên **cùng origin** `https://chunk-diary.vercel.app`.
+- **Sau khi toàn bộ app mới hoàn thành** và vượt qua security, compatibility, AI, browser voice, Auth/Cloud Sync, full-app E2E và Reviewer gate, chỉ khi có **phê duyệt phát hành rõ ràng của Human**, mới merge/replace `main` bằng bản ứng dụng hoàn chỉnh đã kiểm thử và thay thế deployment production trên **cùng origin** `https://chunk-diary.vercel.app`. Không lấy PASS của từng phần M0/M1 làm tín hiệu chuyển app.
 - **Không bắt buộc đăng ký tài khoản** để đọc dữ liệu local cũ, không ép onboarding lại, không xóa/reset IndexedDB hoặc nhật ký cũ.
 - Các chức năng backup/sync, tài khoản và private AI prompt phải hoàn thiện ngay **trong nhánh app mới** trước cutover; không trông chờ bản beta chuyển tiếp để thu thập hoặc dọn dữ liệu trước.
 
 ## Ranh giới phát hành và rollback
 
-1. Phát triển, typecheck, test migration và TTS browser tại nhánh `codex/supabase-app`, Supabase staging riêng và khi cần Vercel preview. Không deploy preview vô hạn theo từng commit.
-2. Freeze chính xác source beta đã chạy, xác nhận origin production và mốc release mới. Git commit/tag beta **không tự chứng minh** mã bundle đang phục vụ người dùng nếu deployment metadata chưa đối chiếu.
-3. Dựng fixture IndexedDB thật/sanitized từ bản beta, giữ nguyên ID, số bản ghi, quan hệ, metadata và tiến độ.
-4. **Rehearse direct cutover trên cùng origin thử nghiệm**: chạy bản beta thật để tạo IndexedDB v4, sau đó thay frontend bằng bản mới và đo lại toàn bộ dữ liệu (không giả định chỉ test import JSON là đủ).
+1. **Hoàn thiện mọi chức năng của app mới** trên `codex/supabase-app` (multilingual, AI backend, Web voice, Auth, backup/restore, consent, cloud sync, UI); kiểm thử chức năng trong môi trường dev/staging. **Không chuyển bất kỳ phần code nào vào `main`** trong quá trình này.
+2. Khi app mới đã xong tính năng: chạy full build, E2E, security, Reviewer; xử lý tất cả blocker. Test tương thích dữ liệu có thể dùng fixture để phòng hồi quy trong quá trình dev, nhưng không cần thực hiện lại rehearsal phát hành ở mỗi milestone.
+3. **Chỉ tới M8**, freeze chính xác source/bundle beta đang chạy, xác nhận origin production và mốc release mới. Git commit/tag beta **không tự chứng minh** bundle production. Chuẩn bị fixture IndexedDB thật/sanitized với ID, số bản ghi, quan hệ, metadata và tiến độ.
+4. **Ở M8**, rehearse direct cutover trên cùng origin thử nghiệm: chạy bản beta để tạo IndexedDB v4, sau đó thay frontend bằng bản mới và đo lại toàn bộ dữ liệu (không giả định chỉ test import JSON là đủ). Đây vẫn là thử nghiệm cô lập, không phải chuyển `main`.
 5. Chạy E2E và review test scripts, negative controls; xác nhận đăng nhập/đăng xuất, quyền sở hữu, RLS, prompt-private, AI schema, offline network failure, browser TTS quota/fallback.
 6. Khi release gate PASS và Human phê duyệt, merge/release chính xác bản đã test vào `main` và cập nhật production deployment một lần; kiểm tra post-release trước khi tuyên bố thành công.
 7. Giữ bản beta deployment cũ để **recovery**, nhưng không tự động rollback bằng binary cũ nếu DB đã nâng version: IndexedDB phiên bản cao có thể khiến beta cũ gặp `VersionError`. Phải có rollback-compatible build, verified export/recovery hoặc hướng nâng cấp khác trước khi phát hành; không xóa dữ liệu phát sinh sau cutover.
