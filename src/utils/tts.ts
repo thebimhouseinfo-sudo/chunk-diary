@@ -64,6 +64,21 @@ export function chooseVoice(
   return matching.find((voice) => storedId && voice.voiceURI === storedId) ?? matching[0] ?? null;
 }
 
+export function voicePreviewText(language: string): string {
+  const text: Record<string, string> = {
+    en: "Hello! This is my reading voice.",
+    zh: "你好！这是我的朗读声音。",
+    ja: "こんにちは。これは私の読み上げ音声です。",
+    ko: "안녕하세요. 이것은 제 읽기 목소리입니다.",
+    es: "Hola, esta es mi voz de lectura.",
+    fr: "Bonjour, voici ma voix de lecture.",
+    de: "Hallo, das ist meine Lesestimme.",
+    it: "Ciao, questa è la mia voce di lettura.",
+    vi: "Xin chào, đây là giọng đọc của tôi.",
+  };
+  return text[getLanguageProfile(language).baseLanguage] || "Hello";
+}
+
 export function speakText(text: string, language: string): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" ||
