@@ -2,7 +2,7 @@ import {
   LEGACY_STORES, fingerprintLegacySnapshot, inspectLegacySnapshot,
   type LegacyRecord, type LegacySnapshot, type LegacyStoreName,
 } from "./legacyCompatibility";
-import { validateLegacyBackup, type LegacyBackup } from "./legacySnapshot";
+import { validateLegacyBackup, LEGACY_BACKUP_FORMAT, LEGACY_BACKUP_FORMAT_VERSION, type LegacyBackup } from "./legacySnapshot";
 
 export type WorkspaceOwner = { kind: "guest" } | { kind: "account"; userId: string };
 export const WORKSPACE_DB_VERSION = 1;
@@ -225,6 +225,70 @@ export async function verifyScopedImport(
     if (checksum !== marker[0].checksum) throw new Error("Workspace checksum mismatch");
     const recordCount = LEGACY_STORES.reduce((sum, store) => sum + inspection.counts[store], inspection.storySessionCount);
     return { destinationName, checksum, recordCount };
+  } finally {
+    db.close();
+  }
+}
+
+
+/**
+ * Snapshot the CURRENT account workspace for explicit, owner-approved cloud
+ * backup. Unlike verifyScopedImport this captures subsequent learning edits.
+ * Does not touch the unscoped beta database or infer ownership from Auth.
+ */
+export async function captureAccountWorkspaceBackup(
+  userId: string,
+  options: {
+    indexedDB?: IDBFactory;
+    currentSettings?: Record<string, string>;
+    now?: () => Date;
+  } = {},
+): Promise<LegacyBackup> {
+  const name = workspaceDatabaseName({ kind: "account", userId });
+  const db = await openScoped(options.indexedDB ?? indexedDB, name, false);
+  if (!db) throw new Error("Account workspace does not exist; no backup was uploaded");
+  try {
+    const rows = await new Promise<Record<string, LegacyRecord[]>>((resolve, reject) => {
+      const transaction = db.transaction([...WORKSPACE_STORES], "readonly");
+      const data: Record<string, LegacyRecord[]> = {};
+      for (const store of WORKSPACE_STORES) {
+        const request = transaction.objectStore(store).getAll();
+        request.onsuccess = () => { data[store] = request.result as LegacyRecord[]; };
+      }
+      transaction.oncomplete = () => resolve(data);
+      transaction.onabort = () => reject(transaction.error ?? new Error("Workspace capture aborted"));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Workspace capture failed"));
+    });
+    const currentSettings = options.currentSettings ?? {};
+    const localSettings: Record<string, string> = {};
+    for (const row of rows.localSettings) {
+      if (typeof row.key === "string" && typeof row.value === "string") {
+        localSettings[row.key] = row.value;
+      }
+    }
+    // Prefer newer scoped settings when available, without exporting unrelated
+    // keys such as Supabase Auth tokens from origin localStorage.
+    for (const [key, value] of Object.entries(currentSettings)) {
+      if (!(["user_settings", "story_chat_settings", "story_chat_has_seen_first_greeting"] as string[]).includes(key) ||
+          typeof value !== "string") throw new Error("Cloud backup settings not allowlisted");
+      localSettings[key] = value;
+    }
+    const snapshot: LegacySnapshot = {
+      source: { dbName: "LanguageChunkDiaryDB", dbVersion: 4, storyDbName: "StoryChatDB", storyDbVersion: 1 },
+      stores: Object.fromEntries(LEGACY_STORES.map((store) => [store, rows[store]])) as Record<LegacyStoreName, LegacyRecord[]>,
+      storySessions: rows.storySessions,
+      localSettings,
+    };
+    const inspection = inspectLegacySnapshot(snapshot);
+    if (!inspection.compatibleShape) throw new Error("Account workspace snapshot is invalid");
+    const checksum = await fingerprintLegacySnapshot(snapshot);
+    return {
+      format: LEGACY_BACKUP_FORMAT,
+      formatVersion: LEGACY_BACKUP_FORMAT_VERSION,
+      capturedAt: (options.now?.() ?? new Date()).toISOString(),
+      snapshot, checksum, counts: inspection.counts,
+      storySessionCount: inspection.storySessionCount,
+    };
   } finally {
     db.close();
   }
