@@ -27,6 +27,19 @@ jobs:
         run: deno check --node-modules-dir=auto supabase/functions/generate-chunks/index.ts
       - name: Auth and quota fail-closed tests (no secrets)
         run: deno test --node-modules-dir=auto --allow-env --allow-net supabase/functions/generate-chunks/index_test.ts
+      - name: Staging Edge denies invalid JWT without a provider call
+        run: |
+          STATUS="$(curl -sS --max-time 20 -o /tmp/chunkdiary_unauth.json -w '%{http_code}' \
+            -X POST "https://nwowifnlfgcmmoiglgmu.supabase.co/functions/v1/generate-chunks" \
+            -H "content-type: application/json" \
+            -H "authorization: Bearer not-a-valid-jwt" \
+            --data '{"contractVersion":"2","requestId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","diaryContent":"synthetic fixture","nativeLanguage":"Vietnamese","targetLanguage":"Japanese","existingSemanticGroups":[]}' )"
+          echo "Staging invalid-token HTTP status: $STATUS"
+          if [ "$STATUS" != "401" ] && [ "$STATUS" != "403" ]; then
+            echo "Staging Edge did not reject invalid JWT"
+            exit 1
+          fi
+          # No secrets are exposed, no valid token exists, and no Gemini call is made.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
