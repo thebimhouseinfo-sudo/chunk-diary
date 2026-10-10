@@ -261,7 +261,10 @@ test("real Chromium: actual beta main app source replaced by dev app on one orig
     }
     assert.equal(upgraded.version, 4);
     assert.equal(upgraded.setting, JSON.stringify({ theme: "system", defaultInputMode: "typing" }));
-    assert.ok((await page.locator("body").innerText()).includes("ChunkDiary"));
+    const rendered = await page.locator("body").innerText();
+    assert.ok(rendered.includes("ChunkDiary"),
+      "Dev app did not render after cutover: " + rendered.slice(0, 500) +
+      " | page errors: " + runtimeErrors.join(" | "));
     assert.deepEqual(runtimeErrors, []);
   } finally {
     if (server) await stopVite(server);
@@ -275,7 +278,14 @@ test("real Chromium Settings: local backup downloads and restore-file validation
   try {
     const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
-    await page.goto(ROOT + "/", { waitUntil: "load" });
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    const response = await page.goto(ROOT + "/", { waitUntil: "load" });
+    await page.waitForTimeout(1000);
+    const body = await page.locator("body").innerText();
+    assert.ok(body.includes("Cài đặt"),
+      "Settings route unavailable. HTTP " + response?.status() + " Body: " + body.slice(0, 500) +
+      " | Errors: " + pageErrors.join(" | "));
     await page.getByRole("button", { name: "Cài đặt" }).first().click();
     await page.getByRole("button", { name: "Tải bản sao dữ liệu local" }).waitFor();
 
