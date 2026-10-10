@@ -396,6 +396,10 @@ export async function preseedDatabaseIfEmpty(): Promise<void> {
 }
 
 export async function clearAllIndexedDb(): Promise<void> {
+  if (activeWorkspaceOwner()?.kind === "account") {
+    // No account-data deletion before verified backup/restore UX exists.
+    throw new Error("Account workspace deletion is disabled");
+  }
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DB_NAME);
 
