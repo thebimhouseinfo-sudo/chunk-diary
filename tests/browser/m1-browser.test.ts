@@ -288,13 +288,14 @@ test("real Chromium Settings: local backup downloads and restore-file validation
       " | Errors: " + pageErrors.join(" | "));
     await page.getByRole("button", { name: "Cài đặt" }).first().click();
     await page.getByRole("button", { name: "Tải bản sao dữ liệu local" }).waitFor();
+    assert.match(await page.locator("body").innerText(), /Local beta trên thiết bị/);
 
     const original = await page.evaluate(async () => (window as any).indexedDB.databases());
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Tải bản sao dữ liệu local" }).click(),
     ]);
-    assert.match(download.suggestedFilename(), /^chunkdiary-backup-\d{4}-\d\d-\d\d\.json$/);
+    assert.match(download.suggestedFilename(), /^chunkdiary-backup-local-\d{4}-\d\d-\d\d\.json$/);
     const backup = JSON.parse(await readFile(await download.path(), "utf8"));
     assert.equal(backup.format, "chunkdiary.beta-v4.snapshot");
     assert.equal(backup.snapshot.source.dbVersion, 4);
