@@ -1,0 +1,35 @@
+# One-time, human-authorized synthetic Gemini smoke. Contains a PUBLIC browser key only.
+# No production deployment, provider credentials or personal user data.
+name: M4 One-Time Gemini Staging Smoke
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - '.github/workflows/m4-one-gemini.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chunkdiary-single-provider-smoke-20261010
+  cancel-in-progress: false
+
+jobs:
+  one-provider-request:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      CHUNKDIARY_ENABLE_LIVE_PROVIDER_SMOKE: I_APPROVE_ONE_GEMINI_CALL
+      CHUNKDIARY_STAGING_URL: https://nwowifnlfgcmmoiglgmu.supabase.co
+      CHUNKDIARY_STAGING_PUBLISHABLE_KEY: sb_publishable_veDsS20g5lEGzCkfWPqGyg_OdKr0GOj
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install app dependencies
+        run: npm ci
+      - name: One synthetic Gemini invocation (quota globally limited to 1)
+        run: node --import tsx --test tests/live/gemini-once-staging.test.ts
