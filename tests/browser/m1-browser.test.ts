@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { chromium } from "playwright";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -264,6 +265,61 @@ test("real Chromium: actual beta main app source replaced by dev app on one orig
     assert.deepEqual(runtimeErrors, []);
   } finally {
     if (server) await stopVite(server);
+    await browser.close();
+  }
+});
+
+
+test("real Chromium Settings: local backup downloads and restore-file validation never writes into beta DB", { timeout: 90000 }, async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    await page.goto(ROOT + "/", { waitUntil: "load" });
+    await page.getByRole("button", { name: "Cài đặt" }).first().click();
+    await page.getByRole("button", { name: "Tải bản sao dữ liệu local" }).waitFor();
+
+    const original = await page.evaluate(async () => (window as any).indexedDB.databases());
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Tải bản sao dữ liệu local" }).click(),
+    ]);
+    assert.match(download.suggestedFilename(), /^chunkdiary-backup-\d{4}-\d\d-\d\d\.json$/);
+    const backup = JSON.parse(await readFile(await download.path(), "utf8"));
+    assert.equal(backup.format, "chunkdiary.beta-v4.snapshot");
+    assert.equal(backup.snapshot.source.dbVersion, 4);
+    assert.equal(typeof backup.checksum, "string");
+    assert.equal(backup.checksum.length, 64);
+    assert.ok(backup.counts.chunks >= 1, "app's own seed records should be included");
+
+    const picker = page.getByLabel("Tệp sao lưu ChunkDiary");
+    await picker.setInputFiles({
+      name: "valid-chunkdiary.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(backup), "utf8"),
+    });
+    const preview = page.getByTestId("backup-preview");
+    await preview.waitFor();
+    assert.match(await preview.innerText(), /chưa nhập dữ liệu vào ứng dụng/i);
+    assert.match(await preview.innerText(), /SHA-256:/);
+
+    const altered = structuredClone(backup);
+    altered.snapshot.stores.chunks[0].stars = 999;
+    await picker.setInputFiles({
+      name: "tampered.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(altered), "utf8"),
+    });
+    await page.getByRole("alert").waitFor();
+    assert.match(await page.getByRole("alert").innerText(), /checksum mismatch/);
+    assert.equal(await preview.count(), 0, "invalid input must discard previous preview");
+
+    // File selection must not write to any app stores or create workspaces.
+    const after = await page.evaluate(async () => (window as any).indexedDB.databases());
+    assert.deepEqual(after, original);
+    assert.ok(!after.some((db: {name?: string}) => db.name?.startsWith("ChunkDiaryWorkspace")));
+    await context.close();
+  } finally {
     await browser.close();
   }
 });
