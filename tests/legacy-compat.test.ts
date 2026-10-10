@@ -151,3 +151,17 @@ test("actual indexedDb.ts source matches the beta v4 fixture schema", async () =
     "diaryId", "meaningUnitId", "packageId", "semanticGroupId", "specialty", "userId",
   ].sort());
 });
+
+test("NEGATIVE CONTROL: digest refuses non-JSON-safe legacy extensions rather than dropping them", async () => {
+  const undefinedField = await load();
+  undefinedField.stores.diaries[0].unknownLegacyField = undefined;
+  await assert.rejects(() => fingerprintLegacySnapshot(undefinedField), /non-JSON-safe/);
+
+  const dateField = await load();
+  dateField.stores.diaries[0].unknownLegacyDate = new Date("2026-01-12T00:00:00Z");
+  await assert.rejects(() => fingerprintLegacySnapshot(dateField), /structured-clone/);
+
+  const circularField = await load();
+  circularField.stores.diaries[0].cycle = circularField.stores.diaries[0];
+  await assert.rejects(() => fingerprintLegacySnapshot(circularField), /circular/);
+});
