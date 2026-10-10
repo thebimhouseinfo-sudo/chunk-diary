@@ -1,0 +1,35 @@
+name: M4 One-Shot Staging Anonymous Auth Smoke
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - '.github/workflows/m4-live-anon-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chunkdiary-staging-anon-smoke
+  cancel-in-progress: false
+
+jobs:
+  staging-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CHUNKDIARY_STAGING_URL: https://nwowifnlfgcmmoiglgmu.supabase.co
+      # Supabase publishable key is a PUBLIC browser credential, not a secret
+      # or privileged service-role key. No provider credentials enter CI.
+      CHUNKDIARY_STAGING_PUBLISHABLE_KEY: sb_publishable_veDsS20g5lEGzCkfWPqGyg_OdKr0GOj
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install app dependencies
+        run: npm ci
+      - name: Run bounded real anonymous Auth + owner RLS test, AI remains disabled
+        run: node --import tsx --test tests/live/anonymous-auth-staging.test.ts
