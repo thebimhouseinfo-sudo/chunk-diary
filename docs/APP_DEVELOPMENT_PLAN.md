@@ -1,11 +1,12 @@
 # ChunkDiary — Detailed App Development Plan
-Version: 1.0 | Date: 2026-10-10 | Project: GSA P-493D | Status: PLANNED / NOT IMPLEMENTED
+Version: 1.1 | Date: 2026-10-10 | Project: GSA P-493D | Status: PLANNED / NOT IMPLEMENTED
 
 ## 0. Decisions, boundaries and baseline
 - **Development integration branch**: `codex/supabase-app`. All new-app work integrates here; short-lived task branches only if isolation is essential, merged promptly. Do not accumulate disconnected commits/branches.
 - **Stable beta / production**: `main` (baseline inspected: `a5be5a8c11b34e36396564b5f88fd915d9670af7`, tag `beta-stable-2026-10-10`). No production deployment, promotion or merge without release gate and user approval.
 - **Source of truth**: source code and this plan in the registered repository; GSA Project/Job Memory records are progress and evidence indexes. After any hotfix to `main`, explicitly reconcile into `codex/supabase-app`.
 - **Product**: local-first multilingual chunk-based learning, Supabase as optional cloud identity/sync and new AI backend; future native iOS/Android share data contracts and backend with web.
+- **Platform phase boundary (Human decision 2026-10-10)**: current implementation and release are **browser Web** (desktop and mobile browser, including browser-managed mic permission and browser speech APIs). Offline TTS/voice availability, native OS microphone permissions, background audio, audio-session interruptions and installed native voices belong to a **separate later Native App phase**, not Web CP5/CP8. Browser speech can be network-dependent; do not promise offline speech.
 - **Absolute invariants**: (I1) same-origin old beta data remains readable without registration, (I2) no deletion/reset/ID regeneration/loss of training stats in automatic migration, (I3) prompts private at runtime and absent from public frontend/source artifact, (I4) never upload raw diary/corpus without explicit product consent, (I5) user can **only choose a voice** in voice UX—no speed/pitch/quality controls; voice/accent is a property of chosen voice, (I6) cloud failure never prevents local learning.
 - **Known exposure**: existing public branch includes prompt material in `supabase/functions/generate-chunks/index.ts` and `docs/app script/code.gs.txt`. Removing it from current files does not retroactively erase public Git history. Treat old prompt as disclosed; produce a new private prompt revision without committing it to public Git; review historical secrets separately.
 
@@ -25,9 +26,9 @@ Web React (now) / iOS + Android (later)
   ├── Language-neutral Domain + LanguagePack registry
   ├── Local Repository (IndexedDB now / native SQLite adapter later)
   ├── AudioService: listVoices / preview / speak / stop / pickVoice
-  │     ├── Web Speech voices / device voice
-  │     ├── iOS AVSpeechSynthesizer / Android TextToSpeech (future)
-  │     └── Opt-in quota-controlled Cloud Neural TTS (fallback)
+  │     ├── Browser Web Speech voices / browser-supported playback (current)
+  │     ├── Optional quota-controlled Cloud Neural TTS (current Web fallback)
+  │     └── Native iOS AVSpeechSynthesizer / Android TextToSpeech (future phase only)
   ├── SpeechRecognitionService (independent from TTS)
   ├── AIClient (canonical versioned request/response)
   └── CloudSync client with consent + offline queue
@@ -88,14 +89,15 @@ Tasks:
 - M4.4 Test latency/errors, malformed/empty responses, rate limits, service failure, cancellation; local stories survive failures.
 PASS: schema + quality evaluation PASS, staging quota enforced, rollback switch tested, no changes to production.
 
-### M5 — Voice quality Web now, native-ready service (depends M2; CP5)
+### M5 — Browser Web voice quality, native-compatible interface (depends M2; CP5)
+**Phase scope:** Web browser only. Browser-managed microphone permission and browser speech recognition remain in scope for Web integration; offline voice and all native OS speech/mic permission lifecycles are expressly deferred. Implement portable interfaces but not native adapters or offline TTS capability discovery.
 Tasks:
 - M5.1 Extract platform-agnostic `AudioService` interface and web adapter from `src/utils/tts.ts`; fix asynchronous voices load, stable identifiers, correct locale, Unicode text handling, cancellation/state races, select only voices available on current platform.
 - M5.2 **UX has exactly one adjustable voice choice.** The choice list may SHOW voice name, accent/locale and descriptive timbre; preview each entry. Do NOT expose separate accent, speed, pitch, playback quality, Neural/System toggles or rate sliders. Use engine's natural speed.
-- M5.3 Prefer best matching free device voice. Evaluate cloud Neural TTS (Google Cloud Chirp 3 HD/Neural2 vs Azure) only as an internal backend fallback, requiring actual per-language listening tests and cost/terms verification before selecting provider.
-- M5.4 Cloud TTS uses auth, quota + hard monthly cost/character gate, cache only within licensing/privacy terms, no exposed API key, no duplicate synthesis on repeat; when budget exhausted fallback to device voice. Never assume cloud is free without limits.
-- M5.5 Native adapter contract for future `AVSpeechSynthesizer` and Android `TextToSpeech`; enumerate actual installed voices, preserve choice per language when possible, fallback safely; do not promise unrestricted Siri voices.
-PASS: listen/preview/switch works in Web desktop + iOS Safari/Android Chrome coverage; at least two meaningfully different voices/accent when platform provides them; system fallback works offline; no paid requests beyond configured cap; exactly one voice setting in UI.
+- M5.3 Prefer best available free **browser-exposed** voice for the user's language; availability/quality depend on current OS/browser and may require network. Evaluate cloud Neural TTS (Google Cloud Chirp 3 HD/Neural2 vs Azure) only as an internal backend fallback, requiring actual per-language listening tests and cost/terms verification before selecting provider.
+- M5.4 Cloud TTS uses auth, quota + hard monthly cost/character gate, cache only within licensing/privacy terms, no exposed API key, no duplicate synthesis on repeat; when budget is exhausted fallback to an available browser voice. If neither is available, show a clear, nonblocking audio-unavailable state and continue text learning. Never assume cloud is free without limits.
+- M5.5 Define **interfaces only** for future iOS `AVSpeechSynthesizer` and Android `TextToSpeech`; document future native voice enumeration, platform permission flow and installed offline voice handling as deferred implementation. Do not implement or test native OS TTS/mic lifecycle in this Web phase.
+PASS: listen/preview/switch works on desktop browsers and mobile browsers (iOS Safari / Android Chrome where available); show alternative voices/accent only when actually available; failed/unavailable browser voice or cloud quota gracefully preserves text learning; no paid requests beyond configured cap; exactly one voice setting in UI. **No offline voice PASS requirement for Web.**
 
 ### M6 — Auth, full cloud sync, consent and security (depends M1, M3; CP6)
 Tasks:
@@ -117,10 +119,10 @@ PASS: end-to-end old-beta-to-new-app via same origin and export/bridge; Account/
 ### M8 — Integrated E2E, hardening, native handoff and release (depends M4, M6, M7; CP8)
 Tasks:
 - M8.1 Reviewer audits code **and test scripts** at checkpoints; red/green negative controls, realistic datasets, browser/device QA, security checks, parity fixtures and build.
-- M8.2 Real staging Supabase + Vercel preview tests for existing beta and new users, English + other launch languages, mic permission, voice availability/fallback, sync failure and recovery.
+- M8.2 Real staging Supabase + Vercel preview tests for existing beta and new users, English + other launch languages, **browser** microphone permission (allow/deny/retry where supported), Web Speech recognition, browser voice availability/fallback, sync failure and recovery; no native OS mic/offline-audio tests.
 - M8.3 Measure data integrity (IDs/counts/stats/checksums), AI quality, TTS listening quality, P50/P95 latency, token/TTS cost, retry rates, consent and privacy. Record explicit acceptance evidence and unresolved items.
 - M8.4 Prepare reversible cutover and rollback: retain beta deployment, export old data before risky schema updates; test rollback build after any IndexedDB version bump. Never roll back by deleting data created after cutover.
-- M8.5 Native handoff specification (shared domain/contracts, local repository + audio adapters, auth deep link/callback); native binaries explicitly **out of scope** of this web-app release.
+- M8.5 Native handoff **specification only** (shared domain/contracts, local repository + audio adapters, auth deep link/callback); implementation of iOS/Android binaries, native microphone permissions, audio sessions/interruptions/background behavior, platform STT/TTS, installed/offline voices and native-device QA is a later separately approved phase, explicitly **out of scope** of this Web release.
 PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage bugs, real regression tests PASS, human approves release and production cutover.
 
 ## 4. File/change map (planned, no code changes in this planning step)
@@ -148,7 +150,7 @@ PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage b
 - AI-02: English, Mandarin, Japanese, Korean + one additional Latin target pass supported language test fixtures.
 - AI-03: malformed/untrusted provider output rejected atomically; no prompt returned in errors.
 - VOICE-01: only voice choice shown, supports preview, accent through voice identity; no speed/quality/pitch UI.
-- VOICE-02: desktop + mobile available voices, failure fallback, offline device playback and quota cap tested.
+- VOICE-02: desktop/mobile **browser** voice selection, preview, failed/unavailable voice fallback and hard cloud quota cap tested. Offline TTS and native microphone/voice behavior explicitly deferred to Native phase.
 - ACC-01: guest→linked identity and second-device restore without data loss; switch user does not expose previous account.
 - REL-01: preview release E2E + reviewer validation of test scripts, rollback/bridge instructions, human cutover approval.
 
@@ -159,7 +161,7 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 ## 7. Release, privacy, budget and failure handling
 - Do not deploy preview on every commit; local and staging tests first, reserve Vercel preview for realistic integration gates.
 - Separate staging vs production Supabase project, keys, prompt store and analytics; audit env variables and token leakage.
-- Cloud TTS is optional; implement hard cap and fallback rather than assuming free indefinitely. Native speech quality depends on installed OS voices; expose supported choices honestly.
+- Web Cloud TTS is optional; implement hard cap and browser-voice/text fallback rather than assuming free indefinitely. Web availability depends on browser, device and network; native/offline voice selection will be assessed in a later Native phase.
 - Structured operations logging only: request ID, contract/prompt version, error category, metrics and timing; never diary text, private prompt, credential, full provider error or raw audio without consent.
 - No production switch, merge to `main`, RLS migration on production or public DNS change without explicit Human approval and verified rollback/restore evidence.
 
@@ -169,5 +171,7 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - Cloud diary backup consent scope/retention policy and TTS audio-cache licensing.
 - Where to host private versioned prompts (Edge secret store for simple deployment vs separately restricted private repository/store for version history).
 - Real-user beta fixture availability with opt-in and sanitization; never copy identifiable diaries into public tests.
+
+**CR scope disposition (2026-10-10):** The CR observation requesting offline voice acceptance is **deferred / out of scope for Web**, per the Human platform-phase clarification; it is not a Web release gate. Other independent CR findings regarding account-local ownership, per-user SQL key collisions, prompt inventory and AI-processing privacy remain open for Planner correction and retest.
 
 **Document scope**: actionable master roadmap. It does not authorize implementation, deployment or release by itself.
