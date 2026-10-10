@@ -1,4 +1,4 @@
-import { handleRequest, validateResponse, classifyProviderFailure } from "./index.ts";
+import { handleRequest, validateResponse, classifyProviderFailure, DEFAULT_GEMINI_MODEL } from "./index.ts";
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -214,4 +214,8 @@ Deno.test("M4: upstream errors cannot leak prompts and are not misclassified as 
   const unusual = classifyProviderFailure({ status: "SECRET_TOKEN", message: "SENSITIVE" });
   assert(unusual.upstreamStatus === null && !JSON.stringify(unusual).includes("SENSITIVE"),
     "untrusted provider detail must not appear");
+});
+
+Deno.test("M4: new-project model default is modern stable Flash; no provider request", () => {
+  assert(DEFAULT_GEMINI_MODEL === "gemini-3.8-flash", "Default should not use restricted Gemini 2.5");
 });
