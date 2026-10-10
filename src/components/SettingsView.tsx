@@ -1,5 +1,6 @@
 import { getSettings, saveSettings } from "../db/userDb";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { captureLegacyBackup, validateLegacyBackup, type LegacyBackup } from "../db/legacySnapshot";
 import {
   User,
   Download,
@@ -29,7 +30,11 @@ export default function SettingsView() {
 
   const [learningLanguageText, setLearningLanguageText] = useState("English");
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [placeholderMessage, setPlaceholderMessage] = useState<string | null>(null);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<LegacyBackup | null>(null);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("user_settings");
@@ -63,13 +68,58 @@ export default function SettingsView() {
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
-  const handlePlaceholderClick = (action: string) => {
-    setPlaceholderMessage(
-      action === "download"
-        ? "Tính năng Tải xuống dữ liệu (Backup) yêu cầu tài khoản Premium để đồng bộ đám mây."
-        : "Tính năng Phục hồi dữ liệu (Restore) yêu cầu tài khoản Premium để đồng bộ đám mây."
-    );
-    setTimeout(() => setPlaceholderMessage(null), 4000);
+  const handleDownloadBackup = async () => {
+    setBackupBusy(true);
+    setBackupError(false);
+    setBackupMessage(null);
+    try {
+      // No cloud request, sign-in, payment or change to the current database.
+      const backup = await captureLegacyBackup();
+      await validateLegacyBackup(backup);
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `chunkdiary-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        // Keep the object URL alive long enough for the browser's download.
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      setBackupMessage("Đã tạo bản sao dữ liệu local. Hãy giữ tệp ở nơi riêng tư.");
+    } catch (error) {
+      setBackupError(true);
+      setBackupMessage(error instanceof Error ? error.message : "Không thể tạo bản sao dữ liệu.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleCheckRestoreFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setRestorePreview(null);
+    setBackupBusy(true);
+    setBackupError(false);
+    setBackupMessage(null);
+    try {
+      if (file.size > 100 * 1024 * 1024) {
+        throw new Error("Tệp quá lớn (giới hạn kiểm tra: 100 MB).");
+      }
+      const data: unknown = JSON.parse(await file.text());
+      const backup = await validateLegacyBackup(data);
+      setRestorePreview(backup);
+      setBackupMessage("Bản sao hợp lệ. Đây chỉ là bước kiểm tra; dữ liệu đang học chưa bị thay đổi.");
+    } catch (error) {
+      setBackupError(true);
+      setBackupMessage(error instanceof Error ? error.message : "Tệp sao lưu không hợp lệ.");
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const handleResetData = async () => {
@@ -290,24 +340,49 @@ export default function SettingsView() {
             </div>
 
             <div className="space-y-3">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Sao lưu miễn phí ngay trên trình duyệt, không cần tài khoản. Tệp có thể chứa
+                nhật ký và lịch sử học cá nhân; không chia sẻ công khai.
+              </p>
               <button
-                onClick={() => handlePlaceholderClick("download")}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer"
+                type="button"
+                disabled={backupBusy}
+                onClick={handleDownloadBackup}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer disabled:opacity-50"
               >
-                <Download size={18} /> Tải xuống dữ liệu (Backup)
+                <Download size={18} /> Tải bản sao dữ liệu local
               </button>
+              <input
+                ref={restoreFileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                aria-label="Tệp sao lưu ChunkDiary"
+                onChange={handleCheckRestoreFile}
+              />
               <button
-                onClick={() => handlePlaceholderClick("upload")}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer"
+                type="button"
+                disabled={backupBusy}
+                onClick={() => restoreFileRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer disabled:opacity-50"
               >
-                <Upload size={18} /> Phục hồi dữ liệu (Restore)
+                <Upload size={18} /> Kiểm tra tệp khôi phục
               </button>
+              {restorePreview && (
+                <div data-testid="backup-preview" className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs text-emerald-900 space-y-2">
+                  <p className="font-bold">Bản sao hợp lệ — chưa nhập dữ liệu vào ứng dụng</p>
+                  <p>Nhật ký: {restorePreview.counts.diaries} · Chunks: {restorePreview.counts.chunks}</p>
+                  <p>Phiên Story Chat: {restorePreview.storySessionCount}</p>
+                  <p className="font-mono break-all">SHA-256: {restorePreview.checksum.slice(0, 16)}…</p>
+                  <p>Khôi phục vào tài khoản sẽ được bật sau khi hoàn thiện cơ chế tách dữ liệu.</p>
+                </div>
+              )}
             </div>
 
-            {placeholderMessage && (
-              <div className="bg-orange-50/20 text-orange-700 text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 animate-pageFadeIn border border-orange-200">
+            {backupMessage && (
+              <div role={backupError ? "alert" : "status"} className={`text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 animate-pageFadeIn border ${backupError ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"}`}>
                 <AlertCircle size={16} />
-                {placeholderMessage}
+                {backupMessage}
               </div>
             )}
           </div>
