@@ -1,0 +1,34 @@
+name: M0 Legacy Data Compatibility
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'src/db/legacyCompatibility.ts'
+      - 'tests/legacy-compat.test.ts'
+      - 'tests/fixtures/beta-v4.fixture.json'
+      - 'docs/contracts/BETA_DATA_V4.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/m0-legacy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install lockfile dependencies
+        run: npm ci
+      - name: Type-check project
+        run: npm run lint
+      - name: Run beta-v4 regression + negative controls
+        run: npm run test:legacy
