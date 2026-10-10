@@ -147,20 +147,22 @@ const outputShape = {
   required: ["contractVersion", "semanticUnits"],
 };
 
-async function verifiedUser(request: Request): Promise<boolean> {
+async function verifiedUser(request: Request): Promise<string | null> {
   const auth = request.headers.get("Authorization");
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
-  if (!auth?.startsWith("Bearer ") || !url || !key) return false;
+  if (!auth?.startsWith("Bearer ") || !url || !key) return null;
   // Never trust request.body.userId or a client-provided unverified JWT payload.
   const response = await fetch(url.replace(/\/$/, "") + "/auth/v1/user", {
     method: "GET",
     headers: { Authorization: auth, apikey: key },
     signal: AbortSignal.timeout(6000),
   });
-  if (!response.ok) return false;
+  if (!response.ok) return null;
   const user: unknown = await response.json();
-  return record(user) && typeof user.id === "string" && !!user.id;
+  return record(user) && typeof user.id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(user.id)
+    ? user.id : null;
 }
 
 /**
@@ -168,17 +170,20 @@ async function verifiedUser(request: Request): Promise<boolean> {
  * authenticated quota slot. The Postgres RPC will only exist when an
  * authorized ChunkDiary staging migration is applied. Missing => fail closed.
  */
-async function claimQuota(req: Request, requestId: string): Promise<"allowed" | "limited" | "unavailable"> {
+async function claimQuota(userId: string, requestId: string): Promise<"allowed" | "limited" | "unavailable"> {
   const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
-  const auth = req.headers.get("Authorization");
-  // The RPC owns all limits. Never expose a client-adjustable daily cap.
-  if (!url || !key || !auth) return "unavailable";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  // Only server-to-server calls can reserve provider budget.
+  // The ID comes from a verified Supabase Auth /user response, never request JSON.
+  if (!url || !serviceKey) return "unavailable";
   try {
     const response = await fetch(url.replace(/\/$/, "") + "/rest/v1/rpc/chunkdiary_ai_quota_claim", {
       method: "POST",
-      headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_request_id: requestId }),
+      headers: {
+        Authorization: "Bearer " + serviceKey,
+        apikey: serviceKey, "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_user_id: userId, p_request_id: requestId }),
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return "unavailable";
@@ -204,8 +209,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     return failure(400, "INVALID_REQUEST");
   }
   const requestId = input.requestId;
+  let userId: string | null = null;
   try {
-    if (!await verifiedUser(req)) return failure(401, "AUTH_REQUIRED", requestId);
+    userId = await verifiedUser(req);
+    if (!userId) return failure(401, "AUTH_REQUIRED", requestId);
   } catch {
     return failure(503, "PROVIDER_UNAVAILABLE", requestId);
   }
@@ -213,7 +220,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (Deno.env.get("CHUNKDIARY_AI_ENABLED") !== "true") {
     return failure(503, "CONFIGURATION_ERROR", requestId);
   }
-  const quota = await claimQuota(req, requestId);
+  const quota = await claimQuota(userId, requestId);
   if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
   if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
 
