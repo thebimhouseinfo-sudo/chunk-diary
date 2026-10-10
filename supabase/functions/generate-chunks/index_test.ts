@@ -217,5 +217,5 @@ Deno.test("M4: upstream errors cannot leak prompts and are not misclassified as 
 });
 
 Deno.test("M4: new-project model default is modern stable Flash; no provider request", () => {
-  assert(DEFAULT_GEMINI_MODEL === "gemini-3.8-flash", "Default should not use restricted Gemini 2.5");
+  assert(DEFAULT_GEMINI_MODEL === "gemini-3-flash-preview", "Must use the explicit user-approved Gemini 3 Flash preview model");
 });
