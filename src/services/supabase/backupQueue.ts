@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { workspaceDatabaseName } from "../../db/scopedWorkspace";
 import { activeWorkspaceOwner } from "../../db/workspaceRouter";
 import { validateLegacyBackup, type LegacyBackup } from "../../db/legacySnapshot";
-import { uploadManualCloudBackup } from "./manualBackup";
+import { inspectManualCloudBackup, uploadManualCloudBackup } from "./manualBackup";
 
 export type BackupQueueStatus = "pending" | "failed" | "synced";
 export type BackupQueueJob = {
@@ -119,6 +119,24 @@ export async function sendQueuedBackup(
           retryAfter:0,errorCode:null,updatedAt:options.now??Date.now()}:current));
     return {status:"synced"};
   }catch(error){
+    // A lost response after a successful CAS may look like a failed request.
+    // Read back only the owner's authenticated cloud snapshot. If it has
+    // exactly the same checksum, mark this queue entry synced rather than
+    // repeatedly attempting a new write. This makes retries idempotent.
+    if (!options.signal?.aborted) {
+      try {
+        ownerGuard(userId);
+        const remote = await inspectManualCloudBackup(client, userId);
+        if (remote.receipt.checksum === job.checksum) {
+          ownerGuard(userId);
+          await withDb(userId,factory,db=>update(db,current=>
+            current?.leaseToken===token?
+              {...current,status:"synced",backup:null,leaseToken:null,leaseUntil:0,
+                retryAfter:0,errorCode:null,updatedAt:options.now??Date.now()}:current));
+          return {status:"synced"};
+        }
+      } catch { /* If offline or foreign owner, preserve the queued snapshot. */ }
+    }
     const msg=error instanceof Error?error.message:"";
     const errorCode=msg.includes("CONFLICT")?"CONFLICT":
       /Auth|ownership|account|workspace/i.test(msg)?"AUTH":
