@@ -172,13 +172,13 @@ async function claimQuota(req: Request, requestId: string): Promise<"allowed" | 
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
   const auth = req.headers.get("Authorization");
-  const limit = Number(Deno.env.get("CHUNKDIARY_AI_DAILY_LIMIT") || 0);
-  if (!url || !key || !auth || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) return "unavailable";
+  // The RPC owns all limits. Never expose a client-adjustable daily cap.
+  if (!url || !key || !auth) return "unavailable";
   try {
     const response = await fetch(url.replace(/\/$/, "") + "/rest/v1/rpc/chunkdiary_ai_quota_claim", {
       method: "POST",
       headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_request_id: requestId, p_daily_limit: limit }),
+      body: JSON.stringify({ p_request_id: requestId }),
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return "unavailable";
