@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { IDBFactory as FakeIDBFactory } from "fake-indexeddb";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { saveDiary, getDiaries } from "../src/db/indexedDb.ts";
+import { saveDiary, getDiaries, openDB } from "../src/db/indexedDb.ts";
 import { chooseAccountWorkspace, chooseLocalWorkspace, resetWorkspaceRuntime } from "../src/db/workspaceRouter.ts";
 import { saveSettings } from "../src/db/userDb.ts";
 import { validateLegacyBackup } from "../src/db/legacySnapshot.ts";
@@ -130,6 +130,8 @@ test("M6 negative: owner mismatch and disabled legacy sync cannot upload or rest
   const storage=memoryStorage();
   (globalThis as {localStorage: Storage}).localStorage=storage as unknown as Storage;
   await chooseAccountWorkspace(A,valid,storage);
+  const db = await openDB(); // Empty but schema-valid account workspace.
+  db.close();
   const mock=clientMock();
   const empty=await createManualWorkspaceBackup(A);
   await assert.rejects(uploadManualCloudBackup(mock.client,A,empty,{confirmed:true}),/Empty workspace/);
