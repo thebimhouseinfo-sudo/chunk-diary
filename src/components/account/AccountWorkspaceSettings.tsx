@@ -125,12 +125,18 @@ export default function AccountWorkspaceSettings() {
 
   const onBackup = () => run(async () => {
     if (!supabase || owner?.kind !== "account") return;
-    if (!window.confirm(
-      "Gửi bản sao nhật ký, chunks, StoryChat và cài đặt của workspace TÀI KHOẢN này " +
-      "lên Supabase để sao lưu riêng tư? Không chia sẻ corpus công khai. Đồng ý?"
+    const previous = cloudPreview?.receipt.checksum ?? null;
+    if (!window.confirm(previous
+      ? "THAY THẾ bản backup cloud vừa xem trước? Chỉ ghi nếu checksum hiện tại vẫn khớp; " +
+        "mọi chỉnh sửa mới từ thiết bị khác sẽ được bảo vệ. Xác nhận?"
+      : "TẠO bản sao cloud lần đầu? Nếu đã có bản backup từ thiết bị khác, " +
+        "ứng dụng sẽ từ chối ghi đè và yêu cầu xem trước. Không chia sẻ corpus. Đồng ý?"
     )) return;
     const backup = await createManualWorkspaceBackup(owner.userId);
-    const receipt = await uploadManualCloudBackup(supabase, owner.userId, backup, { confirmed: true });
+    const receipt = await uploadManualCloudBackup(supabase, owner.userId, backup, {
+      confirmed: true, expectedRemoteChecksum: previous,
+    });
+    setCloudPreview(null); // Force a fresh cloud preview for any subsequent write.
     setStatus("Đã sao lưu thủ công " + receipt.recordCount + " bản ghi. SHA-256: " +
       receipt.checksum.slice(0, 16) + "…");
   });
