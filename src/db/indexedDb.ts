@@ -1,5 +1,7 @@
 import { Diary, MeaningUnit, Chunk, UserSettings, SemanticGroup } from "../types";
 import { getSettings, saveSettings } from "./userDb";
+import { activeWorkspaceOwner } from "./workspaceRouter";
+import { openAccountWorkspace } from "./scopedWorkspace";
 
 // Re-export settings APIs for backward compatibility and centralized imports
 export { getSettings, saveSettings };
@@ -8,6 +10,10 @@ const DB_NAME = "LanguageChunkDiaryDB";
 const DB_VERSION = 4;
 
 export async function openDB(): Promise<IDBDatabase> {
+  const active = activeWorkspaceOwner();
+  if (active?.kind === "account") return openAccountWorkspace(active.userId);
+  // Legacy DB remains the default unless the user explicitly activates their
+  // linked, server-verified account workspace. Never auto-import beta data.
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
