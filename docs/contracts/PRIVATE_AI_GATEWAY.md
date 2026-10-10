@@ -78,3 +78,5 @@ StoryChat now asks before **each** transient AI generation request. Accepting th
 - After the test, the SQL quota was set back to **`enabled=false`** and the exact-tag synthetic anonymous user removed with foreign-key cascade for the claim. The push-triggered single-use workflow was **deleted** to avoid accidental repeats. Human's Edge secret `CHUNKDIARY_AI_ENABLED=true` remains unchanged. The `main` branch and production beta were not modified.
 - **PASS scope:** a single real provider output under controlled staging conditions, including v2 contract and basic Japanese script check. This does NOT certify linguistic quality for all languages, concurrency/cost behavior at volume, real-user E2E, or production release.
 - Official model/pricing references: https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview and https://ai.google.dev/gemini-api/docs/pricing . Model is preview, with provider-specific Free Tier and limits; do not assume unlimited free usage.
+
+Note M6: Snapshot CAS still has one Supabase Advisor security warning; privileged-function migration has not been applied. The backup queue and two-device E2E are pending.
