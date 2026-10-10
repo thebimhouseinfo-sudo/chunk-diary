@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { isSupabaseConfigured, supabase, ensureGuestSession } from "../../services/supabase/client";
+import { captureLegacyBackup } from "../../db/legacySnapshot";
+import { importIntoScopedWorkspace, previewScopedImport } from "../../db/scopedWorkspace";
+import {
+  createManualWorkspaceBackup, inspectManualCloudBackup,
+  uploadManualCloudBackup, restoreManualCloudBackup,
+} from "../../services/supabase/manualBackup";
+import type { LegacyBackup } from "../../db/legacySnapshot";
 import {
   activeWorkspaceOwner, chooseAccountWorkspace, chooseLocalWorkspace,
   type VerifiedWorkspaceUser,
@@ -9,6 +16,10 @@ export default function AccountWorkspaceSettings() {
   const [email, setEmail] = useState("");
   const [identity, setIdentity] = useState<VerifiedWorkspaceUser | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cloudPreview, setCloudPreview] = useState<Awaited<ReturnType<typeof inspectManualCloudBackup>> | null>(null);
+  const [betaPreview, setBetaPreview] = useState<{
+    backup: LegacyBackup; count: number; canImport: boolean;
+  } | null>(null);
   const [status, setStatus] = useState("Chưa kiểm tra phiên đăng nhập.");
   const owner = activeWorkspaceOwner();
 
@@ -91,6 +102,57 @@ export default function AccountWorkspaceSettings() {
     window.location.reload();
   };
 
+  const onPreviewLegacy = () => run(async () => {
+    if (owner?.kind !== "account") return;
+    const backup = await captureLegacyBackup();
+    const preview = await previewScopedImport(backup, owner);
+    setBetaPreview({ backup, count: preview.recordCount, canImport: preview.canImport });
+    setStatus(preview.canImport
+      ? "Dữ liệu Local beta có thể được SAO CHÉP vào workspace trống, chưa upload cloud."
+      : "Workspace tài khoản đã có dữ liệu; không thể nhập đè. Dữ liệu beta vẫn được giữ nguyên.");
+  });
+
+  const onAdoptLocal = () => run(async () => {
+    if (owner?.kind !== "account" || !betaPreview?.canImport) return;
+    if (!window.confirm(
+      "Chỉ SAO CHÉP dữ liệu Local beta vào tài khoản đang mở? Dữ liệu beta KHÔNG bị xóa " +
+      "và KHÔNG tự động tải lên Supabase. Đồng ý?"
+    )) return;
+    await importIntoScopedWorkspace(betaPreview.backup, owner, { confirmed: true });
+    window.location.reload();
+  });
+
+  const onBackup = () => run(async () => {
+    if (!supabase || owner?.kind !== "account") return;
+    if (!window.confirm(
+      "Gửi bản sao nhật ký, chunks, StoryChat và cài đặt của workspace TÀI KHOẢN này " +
+      "lên Supabase để sao lưu riêng tư? Không chia sẻ corpus công khai. Đồng ý?"
+    )) return;
+    const backup = await createManualWorkspaceBackup(owner.userId);
+    const receipt = await uploadManualCloudBackup(supabase, owner.userId, backup, { confirmed: true });
+    setStatus("Đã sao lưu thủ công " + receipt.recordCount + " bản ghi. SHA-256: " +
+      receipt.checksum.slice(0, 16) + "…");
+  });
+
+  const onPreviewCloud = () => run(async () => {
+    if (!supabase || owner?.kind !== "account") return;
+    const result = await inspectManualCloudBackup(supabase, owner.userId);
+    setCloudPreview(result);
+    setStatus("Cloud backup hợp lệ: " + result.receipt.recordCount + " bản ghi. " +
+      (result.preview.canImport ? "Workspace trống, có thể phục hồi." :
+        "Workspace có dữ liệu; từ chối nhập đè."));
+  });
+
+  const onRestoreCloud = () => run(async () => {
+    if (!supabase || owner?.kind !== "account" || !cloudPreview?.preview.canImport) return;
+    if (!window.confirm(
+      "Phục hồi bản sao cloud đã xem trước vào workspace TRỐNG này? " +
+      "Không thay đổi dữ liệu Local beta. Xác nhận?"
+    )) return;
+    await restoreManualCloudBackup(supabase, owner.userId, cloudPreview.backup, { confirmed: true });
+    window.location.reload();
+  });
+
   const onSignOut = () => run(async () => {
     if (!supabase) return;
     // Remove the active workspace pointer BEFORE clearing Auth credentials.
@@ -151,6 +213,48 @@ export default function AccountWorkspaceSettings() {
               className="w-full rounded-xl border border-vibrant-indigo p-3 text-sm font-bold">
               Trở về dữ liệu Local beta (không xóa workspace)
             </button>
+          )}
+          {owner?.kind === "account" && (
+            <div className="space-y-2 rounded-xl border border-slate-100 p-4">
+              <p className="text-xs font-bold text-slate-700">Chuyển dữ liệu có xác nhận</p>
+              <button type="button" disabled={busy} onClick={onPreviewLegacy}
+                className="w-full rounded-xl border p-3 text-sm font-semibold disabled:opacity-50">
+                Xem trước dữ liệu Local beta để sao chép
+              </button>
+              {betaPreview && (
+                <p className="text-xs text-slate-600">
+                  Local beta: {betaPreview.count} bản ghi.
+                  {betaPreview.canImport ? " Có thể sao chép vào workspace trống." : " Không được nhập đè."}
+                </p>
+              )}
+              {betaPreview?.canImport && (
+                <button type="button" disabled={busy} onClick={onAdoptLocal}
+                  className="w-full rounded-xl bg-slate-100 p-3 text-sm font-bold disabled:opacity-50">
+                  Xác nhận sao chép vào workspace tài khoản (không upload)
+                </button>
+              )}
+              <button type="button" disabled={busy} onClick={onBackup}
+                className="w-full rounded-xl bg-vibrant-indigo p-3 text-sm font-bold text-white disabled:opacity-50">
+                Sao lưu thủ công workspace lên Supabase
+              </button>
+              <button type="button" disabled={busy} onClick={onPreviewCloud}
+                className="w-full rounded-xl border p-3 text-sm font-bold disabled:opacity-50">
+                Kiểm tra bản sao trên Supabase
+              </button>
+              {cloudPreview && (
+                <p className="text-xs text-slate-600">
+                  Cloud: {cloudPreview.receipt.recordCount} bản ghi,
+                  SHA-256 {cloudPreview.receipt.checksum.slice(0, 12)}….
+                  {cloudPreview.preview.canImport ? " Có thể phục hồi." : " Không thể nhập đè workspace có dữ liệu."}
+                </p>
+              )}
+              {cloudPreview?.preview.canImport && (
+                <button type="button" disabled={busy} onClick={onRestoreCloud}
+                  className="w-full rounded-xl bg-slate-100 p-3 text-sm font-bold disabled:opacity-50">
+                  Xác nhận phục hồi cloud vào workspace trống
+                </button>
+              )}
+            </div>
           )}
           {identity && (
             <button type="button" disabled={busy} onClick={onSignOut}
