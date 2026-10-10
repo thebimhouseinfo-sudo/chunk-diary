@@ -20,6 +20,8 @@ on:
       - 'tests/backup-queue.test.ts'
       - 'src/services/supabase/cloudSync.ts'
       - 'tests/manual-cloud-backup.test.ts'
+      - 'supabase/migrations/**'
+      - 'tests/migration-contract.test.ts'
       - 'docs/contracts/ACCOUNT_WORKSPACE_V1.md'
       - '.github/workflows/m6-workspace.yml'
   workflow_dispatch:
@@ -46,4 +48,4 @@ jobs:
       - name: Production bundle build
         run: npm run build
       - name: Identity-isolation and read/write regression
-        run: node --import tsx --test tests/workspace-routing.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts tests/manual-cloud-backup.test.ts tests/backup-queue.test.ts
+        run: node --import tsx --test tests/workspace-routing.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts tests/manual-cloud-backup.test.ts tests/backup-queue.test.ts tests/migration-contract.test.ts
