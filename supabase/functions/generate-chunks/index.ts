@@ -1,144 +1,214 @@
 import { GoogleGenAI, Type } from "npm:@google/genai@2.4.0";
 
-const corsHeaders = {
+/**
+ * M3/M4 staging-only Edge gateway. The private instruction is read from
+ * Deno.env, NOT defined in any tracked file, bundle, network response or log.
+ * The function stays disabled until real Auth, quota and provider QA pass.
+ */
+const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Cache-Control": "no-store",
 };
+const maxDiaryCharacters = 12000;
+const maxGroups = 80;
+const maxUnits = 40;
+const allowedLanguages = new Set(["vi", "en", "zh", "ja", "ko", "es", "fr"]);
 
-interface GenerateChunksInput {
-  diaryContent?: string;
-  nativeLanguage?: string;
-  targetLanguage?: string;
-  cefrLevel?: string;
-  specialty?: string;
-  subSpecialty?: string;
-  profileContext?: string;
-  existingSemanticGroups?: Array<{
-    id?: string;
-    canonicalMeaning: string;
-    coverageLevel: number;
-    createdAt: string;
-  }>;
+type ErrorCode = "INVALID_REQUEST" | "AUTH_REQUIRED" | "RATE_LIMITED" |
+  "PAYLOAD_TOO_LARGE" | "CONFIGURATION_ERROR" | "INVALID_MODEL_OUTPUT" |
+  "PROVIDER_UNAVAILABLE" | "PROVIDER_TIMEOUT";
+
+function respond(code: number, result: unknown): Response {
+  return Response.json(result, { status: code, headers: cors });
+}
+function failure(status: number, code: ErrorCode, requestId?: string): Response {
+  return respond(status, {
+    success: false, requestId,
+    error: { code, retryable: status === 408 || status === 429 || status >= 500 },
+  });
+}
+function record(x: unknown): x is Record<string, unknown> {
+  return !!x && typeof x === "object" && !Array.isArray(x);
+}
+function cleanLang(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length > 40) throw new Error("invalid locale");
+  const canonical = Intl.getCanonicalLocales(raw.trim().replace(/_/g, "-"))[0];
+  if (!canonical || !allowedLanguages.has(canonical.split("-")[0])) throw new Error("unsupported locale");
+  return canonical;
+}
+function validateRequest(body: unknown) {
+  if (!record(body) || body.contractVersion !== "2" ||
+      typeof body.requestId !== "string" || !/^[a-f0-9-]{30,45}$/i.test(body.requestId)) {
+    throw new Error("invalid contract");
+  }
+  if (typeof body.diaryContent !== "string" || !body.diaryContent.trim() ||
+      body.diaryContent.length > maxDiaryCharacters) throw new Error("invalid diary");
+  const groups = body.existingSemanticGroups == null ? [] : body.existingSemanticGroups;
+  if (!Array.isArray(groups) || groups.length > maxGroups ||
+      groups.some((g) => !record(g) || typeof g.id !== "string" ||
+        typeof g.canonicalMeaning !== "string" ||
+        g.canonicalMeaning.length > 500)) throw new Error("invalid groups");
+  const allowedText = (value: unknown, max: number): string =>
+    typeof value === "string" && value.length <= max ? value : "";
+  return {
+    requestId: body.requestId,
+    diaryContent: body.diaryContent,
+    sourceLanguage: cleanLang(body.nativeLanguage),
+    targetLanguage: cleanLang(body.targetLanguage),
+    level: allowedText(body.cefrLevel, 50),
+    specialty: allowedText(body.specialty, 120),
+    subSpecialty: allowedText(body.subSpecialty, 120),
+    profileContext: allowedText(body.profileContext, 300),
+    existingSemanticGroups: groups.map((g) => ({
+      id: g.id, canonicalMeaning: g.canonicalMeaning,
+    })),
+  };
+}
+function validateResponse(raw: unknown, sourceLanguage: string, targetLanguage: string): Record<string, unknown> {
+  if (!record(raw) || raw.contractVersion !== "2" ||
+      !Array.isArray(raw.semanticUnits) || !raw.semanticUnits.length ||
+      raw.semanticUnits.length > maxUnits) throw new Error("invalid response envelope");
+  const usedOrders = new Set<number>();
+  const units = raw.semanticUnits.map((unit) => {
+    if (!record(unit) || !Number.isInteger(unit.order) || Number(unit.order) < 1 ||
+        usedOrders.has(Number(unit.order)) || typeof unit.sourceText !== "string" ||
+        !unit.sourceText.trim() || unit.sourceText.length > 12000) throw new Error("invalid unit");
+    usedOrders.add(Number(unit.order));
+    const parseChunks = (items: unknown) => {
+      if (!Array.isArray(items) || items.length > 1) throw new Error("invalid chunk count");
+      return items.map((chunk) => {
+        if (!record(chunk) || typeof chunk.targetText !== "string" || !chunk.targetText.trim() ||
+            typeof chunk.meaning !== "string" || !chunk.meaning.trim() ||
+            chunk.targetText.length > 500 || chunk.meaning.length > 1000 ||
+            (typeof chunk.semanticGroupId !== "string" || !chunk.semanticGroupId) &&
+            (typeof chunk.proposedCanonicalMeaning !== "string" || !chunk.proposedCanonicalMeaning.trim())) {
+          throw new Error("invalid chunk");
+        }
+        return {
+          targetText: chunk.targetText.trim(), meaning: chunk.meaning.trim(),
+          ipa: typeof chunk.ipa === "string" ? chunk.ipa.slice(0, 200) : "",
+          romanization: typeof chunk.romanization === "string" ? chunk.romanization.slice(0, 200) : "",
+          semanticGroupId: typeof chunk.semanticGroupId === "string" ? chunk.semanticGroupId : "",
+          ...(typeof chunk.proposedCanonicalMeaning === "string" ?
+            { proposedCanonicalMeaning: chunk.proposedCanonicalMeaning.trim() } : {}),
+        };
+      });
+    };
+    return {
+      order: unit.order, sourceText: unit.sourceText.trim(),
+      commonChunks: parseChunks(unit.commonChunks),
+      personalizedChunks: parseChunks(unit.personalizedChunks),
+    };
+  });
+  return {
+    contractVersion: "2", sourceLanguage, targetLanguage,
+    narrative: typeof raw.narrative === "string" ? raw.narrative.slice(0, 12000) : "",
+    semanticUnits: units,
+  };
 }
 
-const chunkSchema = {
+const chunkShape = {
   type: Type.OBJECT,
   properties: {
-    english: { type: Type.STRING },
-    text: { type: Type.STRING },
+    targetText: { type: Type.STRING },
     meaning: { type: Type.STRING },
     ipa: { type: Type.STRING },
     romanization: { type: Type.STRING },
     semanticGroupId: { type: Type.STRING },
     proposedCanonicalMeaning: { type: Type.STRING },
   },
-  required: ["english", "text", "meaning", "ipa", "romanization", "semanticGroupId"],
+  required: ["targetText", "meaning", "semanticGroupId", "proposedCanonicalMeaning"],
+};
+const outputShape = {
+  type: Type.OBJECT,
+  properties: {
+    contractVersion: { type: Type.STRING },
+    narrative: { type: Type.STRING },
+    semanticUnits: {
+      type: Type.ARRAY, items: {
+        type: Type.OBJECT,
+        properties: {
+          order: { type: Type.INTEGER },
+          sourceText: { type: Type.STRING },
+          commonChunks: { type: Type.ARRAY, items: chunkShape },
+          personalizedChunks: { type: Type.ARRAY, items: chunkShape },
+        },
+        required: ["order", "sourceText", "commonChunks", "personalizedChunks"],
+      },
+    },
+  },
+  required: ["contractVersion", "semanticUnits"],
 };
 
-function buildPrompt(input: Required<Pick<GenerateChunksInput, "diaryContent" | "nativeLanguage" | "targetLanguage">> & GenerateChunksInput) {
-  const existingGroups = input.existingSemanticGroups?.slice(0, 80) ?? [];
-
-  return `You are an expert language teacher specializing in chunk-based learning.
-
-Native language: ${input.nativeLanguage}
-Target language: ${input.targetLanguage}
-CEFR level: ${input.cefrLevel || "not specified"}
-Specialty/profession: ${input.specialty || "not specified"}
-Sub-specialty: ${input.subSpecialty || "not specified"}
-Profile context: ${input.profileContext || "not specified"}
-
-Existing semantic groups:
-${JSON.stringify(existingGroups, null, 2)}
-
-Diary:
-${input.diaryContent}
-
-Tasks:
-1. Translate the diary into a natural English narrative.
-2. Split the diary into ordered semantic units.
-3. For each semantic unit, provide the original native text and an English translation.
-4. Extract common chunks and personalized chunks in the target language.
-5. Prefer reusing a matching existing semanticGroupId when the meaning matches an existing semantic group.
-6. If no existing group matches, set semanticGroupId to an empty string and provide proposedCanonicalMeaning.
-
-Return only JSON with this exact shape:
-{
-  "englishNarrative": "string",
-  "semanticUnits": [
-    {
-      "order": 1,
-      "nativeText": "string",
-      "englishText": "string",
-      "commonChunks": [],
-      "personalizedChunks": []
-    }
-  ]
-}`;
+async function verifiedUser(request: Request): Promise<boolean> {
+  const auth = request.headers.get("Authorization");
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  if (!auth?.startsWith("Bearer ") || !url || !key) return false;
+  // Never trust request.body.userId or a client-provided unverified JWT payload.
+  const response = await fetch(url.replace(/\/$/, "") + "/auth/v1/user", {
+    method: "GET",
+    headers: { Authorization: auth, apikey: key },
+    signal: AbortSignal.timeout(6000),
+  });
+  return response.ok;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return respond(200, {});
+  if (req.method !== "POST") return failure(405, "INVALID_REQUEST");
+  if ((Number(req.headers.get("content-length") || 0)) > 45000) {
+    return failure(413, "PAYLOAD_TOO_LARGE");
+  }
+  let input;
+  try {
+    input = validateRequest(await req.json());
+  } catch {
+    return failure(400, "INVALID_REQUEST");
+  }
+  const requestId = input.requestId;
+  try {
+    if (!await verifiedUser(req)) return failure(401, "AUTH_REQUIRED", requestId);
+  } catch {
+    return failure(503, "PROVIDER_UNAVAILABLE", requestId);
+  }
+
+  // Fail closed: durable per-user quota/idempotency and rollout flag are M4.
+  // A client cannot turn this flag on; only the operator can set Edge secrets.
+  if (Deno.env.get("CHUNKDIARY_AI_ENABLED") !== "true" ||
+      Deno.env.get("CHUNKDIARY_QUOTA_VERIFIED") !== "true") {
+    return failure(503, "CONFIGURATION_ERROR", requestId);
+  }
+
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const privatePrompt = Deno.env.get("CHUNKDIARY_PROMPT_V2");
+  const promptVersion = Deno.env.get("CHUNKDIARY_PROMPT_VERSION") || "";
+  if (!apiKey || !privatePrompt || !promptVersion) {
+    return failure(503, "CONFIGURATION_ERROR", requestId);
   }
 
   try {
-    if (req.method !== "POST") {
-      return Response.json({ success: false, error: "Method not allowed" }, { status: 405, headers: corsHeaders });
-    }
-
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return Response.json({ success: false, error: "Authentication is required to generate chunks" }, { status: 401, headers: corsHeaders });
-    }
-
-    const input = await req.json() as GenerateChunksInput;
-    if (!input.diaryContent || !input.nativeLanguage || !input.targetLanguage) {
-      return Response.json({ success: false, error: "Missing required fields: diaryContent, nativeLanguage, targetLanguage" }, { status: 400, headers: corsHeaders });
-    }
-
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!apiKey) {
-      return Response.json({ success: false, error: "GEMINI_API_KEY is not configured" }, { status: 500, headers: corsHeaders });
-    }
-
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash",
-      contents: buildPrompt(input as Required<Pick<GenerateChunksInput, "diaryContent" | "nativeLanguage" | "targetLanguage">> & GenerateChunksInput),
+      contents: JSON.stringify(input),
       config: {
+        systemInstruction: privatePrompt,
         responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            englishNarrative: { type: Type.STRING },
-            semanticUnits: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  order: { type: Type.INTEGER },
-                  nativeText: { type: Type.STRING },
-                  englishText: { type: Type.STRING },
-                  commonChunks: { type: Type.ARRAY, items: chunkSchema },
-                  personalizedChunks: { type: Type.ARRAY, items: chunkSchema },
-                },
-                required: ["order", "nativeText", "englishText", "commonChunks", "personalizedChunks"],
-              },
-            },
-          },
-          required: ["englishNarrative", "semanticUnits"],
-        },
+        responseSchema: outputShape,
+        maxOutputTokens: 4096,
+        abortSignal: AbortSignal.timeout(45000),
       },
     });
-
-    if (!response.text) {
-      return Response.json({ success: false, error: "Empty response from Gemini" }, { status: 502, headers: corsHeaders });
-    }
-
-    return Response.json({ success: true, result: response.text }, { headers: corsHeaders });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return Response.json({ success: false, error: message }, { status: 500, headers: corsHeaders });
+    const parsed: unknown = response.text ? JSON.parse(response.text) : null;
+    const result = validateResponse(parsed, input.sourceLanguage, input.targetLanguage);
+    return respond(200, {
+      success: true, requestId, contractVersion: "2", promptVersion, result,
+    });
+  } catch {
+    // Deliberately no error.message, diary content, raw provider output or prompt.
+    return failure(502, "INVALID_MODEL_OUTPUT", requestId);
   }
 });
