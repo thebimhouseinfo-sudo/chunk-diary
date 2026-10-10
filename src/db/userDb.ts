@@ -1,14 +1,12 @@
 import { UserSettings } from "../types";
 
-const DB_NAME = "LanguageChunkDiaryDB";
+import { openDB } from "./indexedDb";
+
 const STORE_NAME = "settings";
 
+/** Settings follow the same owner as diaries and chunks. */
 export async function openUserDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  return openDB();
 }
 
 // Lấy thông tin cấu hình người dùng từ IndexedDB
