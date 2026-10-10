@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "playwright";
+import { spawn, type ChildProcess } from "node:child_process";
 
 const ROOT = process.env.M1_TEST_ORIGIN ?? "http://127.0.0.1:4173";
 const accountA = { kind: "account" as const, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
@@ -131,6 +132,138 @@ test("real Chromium: same-origin beta-v4 data persists through scoped restore an
     assert.deepEqual(consoleErrors, [], "real browser console must have no page errors");
     await context.close();
   } finally {
+    await browser.close();
+  }
+});
+
+async function startVite(cwd: string, port: number): Promise<ChildProcess> {
+  const child = spawn(process.execPath, [
+    "node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", String(port), "--strictPort",
+  ], { cwd, stdio: "pipe", env: { ...process.env, CI: "true" } });
+  let log = "";
+  child.stdout?.on("data", (data: Buffer) => { log += String(data); });
+  child.stderr?.on("data", (data: Buffer) => { log += String(data); });
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (child.exitCode !== null) throw new Error("Vite exited early: " + log);
+    try {
+      const response = await fetch("http://127.0.0.1:" + port + "/",
+        { signal: AbortSignal.timeout(800) });
+      if (response.ok) return child;
+    } catch { /* server startup */ }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  child.kill("SIGTERM");
+  throw new Error("Vite did not start: " + log);
+}
+async function stopVite(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  await new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+    child.kill("SIGTERM");
+    setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); }, 3500).unref();
+  });
+}
+
+test("real Chromium: actual beta main app source replaced by dev app on one origin, local library retained", { timeout: 150000 }, async () => {
+  const betaDir = process.cwd() + "/beta-baseline";
+  const port = 4191;
+  const origin = "http://127.0.0.1:" + port;
+  const browser = await chromium.launch({ headless: true });
+  let server: ChildProcess | undefined;
+  try {
+    const page = await browser.newPage();
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(error.message));
+    server = await startVite(betaDir, port);
+    await page.goto(origin + "/", { waitUntil: "load" });
+    await page.waitForFunction(async () =>
+      (await indexedDB.databases()).some((db) => db.name === "LanguageChunkDiaryDB" && db.version === 4),
+    { timeout: 15000 });
+    const original = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const r = indexedDB.open("LanguageChunkDiaryDB", 4);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      const diary = {
+        id: "direct-cutover-diary", title: "Synthetic beta diary",
+        content: "Testing storage compatibility, no personal data.",
+        createdAt: "2026-10-10T00:00:00.000Z", specialOldFlag: { retained: true },
+      };
+      const unit = {
+        id: "direct-cutover-unit", diaryId: diary.id,
+        nativeText: "Tôi đang kiểm tra dữ liệu.",
+        englishPivot: "I am testing the data.", order: 0,
+      };
+      const chunk = {
+        id: "direct-cutover-chunk", meaningUnitId: unit.id,
+        semanticGroupId: "direct-cutover-group", language: "English",
+        text: "testing the data", meaning: "kiểm tra dữ liệu", ipa: "",
+        romanization: "", chunkType: "common",
+        stars: 5, bestAccuracy: 92, timesPracticed: 37,
+        lastPracticed: "2026-10-09T00:00:00.000Z", totalReviews: 43,
+        averageRating: 4.2, lastRating: 5,
+        lastReviewed: "2026-10-09T00:00:00.000Z",
+        sourceDiaryId: diary.id, sourceDiaryTitle: diary.title,
+        extraBetaValue: { userDefined: true },
+      };
+      const group = {
+        id: "direct-cutover-group", canonicalMeaning: "testing the data",
+        coverageLevel: 2, createdAt: "2026-10-10T00:00:00.000Z",
+      };
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(["diaries", "meaningUnits", "chunks", "semanticGroups"], "readwrite");
+        tx.objectStore("diaries").put(diary);
+        tx.objectStore("meaningUnits").put(unit);
+        tx.objectStore("chunks").put(chunk);
+        tx.objectStore("semanticGroups").put(group);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+      localStorage.setItem("story_chat_settings", JSON.stringify({ theme: "system", defaultInputMode: "typing" }));
+      return { diary, unit, chunk, group };
+    });
+    assert.ok((await page.locator("body").innerText()).includes("ChunkDiary"));
+
+    // Stop the beta main source server; bring up development app on the
+    // IDENTICAL hostname, port and browser context with persistent IndexedDB.
+    await stopVite(server);
+    server = await startVite(process.cwd(), port);
+    await page.goto(origin + "/", { waitUntil: "load" });
+    await page.waitForFunction(async () =>
+      (await indexedDB.databases()).some((db) => db.name === "LanguageChunkDiaryDB" && db.version === 4),
+    { timeout: 15000 });
+    const upgraded = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const r = indexedDB.open("LanguageChunkDiaryDB", 4);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      const data = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        const tx = db.transaction(["diaries", "meaningUnits", "chunks", "semanticGroups"], "readonly");
+        const diary = tx.objectStore("diaries").get("direct-cutover-diary");
+        const unit = tx.objectStore("meaningUnits").get("direct-cutover-unit");
+        const chunk = tx.objectStore("chunks").get("direct-cutover-chunk");
+        const group = tx.objectStore("semanticGroups").get("direct-cutover-group");
+        tx.oncomplete = () => resolve({
+          diary: diary.result, unit: unit.result, chunk: chunk.result, group: group.result,
+        });
+        tx.onerror = () => reject(tx.error);
+      });
+      const version = db.version;
+      db.close();
+      return { ...data, version, setting: localStorage.getItem("story_chat_settings") };
+    });
+    for (const name of ["diary", "unit", "chunk", "group"] as const) {
+      assert.deepEqual(upgraded[name], original[name], name + " must survive beta-to-dev cutover");
+    }
+    assert.equal(upgraded.version, 4);
+    assert.equal(upgraded.setting, JSON.stringify({ theme: "system", defaultInputMode: "typing" }));
+    assert.ok((await page.locator("body").innerText()).includes("ChunkDiary"));
+    assert.deepEqual(runtimeErrors, []);
+  } finally {
+    if (server) await stopVite(server);
     await browser.close();
   }
 });
