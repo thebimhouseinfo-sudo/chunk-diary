@@ -26,12 +26,20 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout beta main source for same-origin replacement rehearsal
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: beta-baseline
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - name: Install lockfile dependencies
         run: npm ci
+      - name: Install beta main source dependencies
+        run: npm ci --prefix beta-baseline
       - name: Install isolated test-only tools
         run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5 playwright@1.56.1
       - name: Type check
