@@ -13,6 +13,10 @@ import {
   AlertCircle
 } from "lucide-react";
 import { UserSettings } from "../types";
+import {
+  availableVoices, getPreferredVoice, setPreferredVoice,
+  speakText, voicePreviewText, type BrowserVoiceOption
+} from "../utils/tts";
 import { clearAllIndexedDb } from "../db/indexedDb"; // Import to clear IndexedDB
 import { clearAllUserDb } from "../db/userDb"; // Import to clear userDb
 
@@ -35,6 +39,9 @@ export default function SettingsView() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [restorePreview, setRestorePreview] = useState<LegacyBackup | null>(null);
   const restoreFileRef = useRef<HTMLInputElement>(null);
+  const [browserVoices, setBrowserVoices] = useState<BrowserVoiceOption[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
+  const currentVoiceLanguage = learningLanguageText.split(",")[0].trim() || "English";
 
   useEffect(() => {
     const saved = localStorage.getItem("user_settings");
@@ -46,6 +53,34 @@ export default function SettingsView() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        setBrowserVoices(availableVoices(currentVoiceLanguage));
+        setSelectedVoiceId(getPreferredVoice(currentVoiceLanguage) || "");
+      } catch {
+        setBrowserVoices([]);
+        setSelectedVoiceId("");
+      }
+    };
+    refresh();
+    window.speechSynthesis?.addEventListener("voiceschanged", refresh);
+    return () => window.speechSynthesis?.removeEventListener("voiceschanged", refresh);
+  }, [currentVoiceLanguage]);
+
+  const handleVoiceChange = (voiceURI: string) => {
+    setPreferredVoice(currentVoiceLanguage, voiceURI || null);
+    setSelectedVoiceId(voiceURI);
+  };
+
+  const handleVoicePreview = async () => {
+    try {
+      await speakText(voicePreviewText(currentVoiceLanguage), currentVoiceLanguage);
+    } catch {
+      // Browser voice availability is platform-dependent; text learning remains usable.
+    }
+  };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -332,6 +367,44 @@ export default function SettingsView() {
 
         {/* Sidebar / Extra Actions */}
         <div className="lg:col-span-4 space-y-6">
+          {/* Web voice only: one chooser, no speed/pitch/quality controls. */}
+          <section className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-4" aria-label="Giọng đọc">
+            <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
+              <Sparkles size={20} className="text-vibrant-coral" />
+              <h3 className="font-display font-black text-lg text-slate-900">Giọng đọc</h3>
+            </div>
+            <label htmlFor="web-voice-choice" className="block text-xs font-semibold text-slate-600">
+              Chọn giọng cho {currentVoiceLanguage}
+            </label>
+            <select
+              id="web-voice-choice"
+              aria-label="Chọn giọng đọc"
+              value={browserVoices.some((voice) => voice.voiceURI === selectedVoiceId) ? selectedVoiceId : ""}
+              onChange={(event) => handleVoiceChange(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-3 text-sm outline-none focus:border-vibrant-indigo"
+            >
+              <option value="">Tự động theo trình duyệt</option>
+              {browserVoices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name} ({voice.lang})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              data-tts
+              onClick={handleVoicePreview}
+              className="w-full rounded-xl bg-vibrant-indigo/10 text-vibrant-indigo px-4 py-3 text-sm font-bold hover:bg-vibrant-indigo/20"
+            >
+              Nghe thử giọng
+            </button>
+            {browserVoices.length === 0 && (
+              <p role="status" className="text-xs text-slate-500">
+                Trình duyệt chưa cung cấp giọng phù hợp. Bạn vẫn có thể học bằng văn bản.
+              </p>
+            )}
+            <p className="text-xs text-slate-500">Giọng sẵn có tùy trình duyệt và thiết bị; có thể cần mạng. Không yêu cầu giọng offline.</p>
+          </section>
           {/* Data Management Card */}
           <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
             <div className="flex items-center gap-3 text-vibrant-indigo border-b border-slate-50 pb-4">
