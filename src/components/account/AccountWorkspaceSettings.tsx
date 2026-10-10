@@ -4,7 +4,7 @@ import { captureLegacyBackup } from "../../db/legacySnapshot";
 import { importIntoScopedWorkspace, previewScopedImport } from "../../db/scopedWorkspace";
 import {
   createManualWorkspaceBackup, inspectManualCloudBackup,
-  uploadManualCloudBackup, restoreManualCloudBackup,
+  uploadManualCloudBackup, restoreManualCloudBackup, restoreAccountPreferences,
 } from "../../services/supabase/manualBackup";
 import type { LegacyBackup } from "../../db/legacySnapshot";
 import {
@@ -119,6 +119,7 @@ export default function AccountWorkspaceSettings() {
       "và KHÔNG tự động tải lên Supabase. Đồng ý?"
     )) return;
     await importIntoScopedWorkspace(betaPreview.backup, owner, { confirmed: true });
+    restoreAccountPreferences(owner.userId, betaPreview.backup);
     window.location.reload();
   });
 
