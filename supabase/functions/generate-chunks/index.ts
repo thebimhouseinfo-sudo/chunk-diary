@@ -34,7 +34,12 @@ function record(x: unknown): x is Record<string, unknown> {
 }
 function cleanLang(raw: unknown): string {
   if (typeof raw !== "string" || raw.length > 40) throw new Error("invalid locale");
-  const canonical = Intl.getCanonicalLocales(raw.trim().replace(/_/g, "-"))[0];
+  const name = raw.trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    vietnamese: "vi-VN", english: "en-US", chinese: "zh-CN", mandarin: "zh-CN",
+    japanese: "ja-JP", korean: "ko-KR", spanish: "es-ES", french: "fr-FR",
+  };
+  const canonical = Intl.getCanonicalLocales(aliases[name] ?? raw.trim().replace(/_/g, "-"))[0];
   if (!canonical || !allowedLanguages.has(canonical.split("-")[0])) throw new Error("unsupported locale");
   return canonical;
 }
@@ -153,10 +158,40 @@ async function verifiedUser(request: Request): Promise<boolean> {
     headers: { Authorization: auth, apikey: key },
     signal: AbortSignal.timeout(6000),
   });
-  return response.ok;
+  if (!response.ok) return false;
+  const user: unknown = await response.json();
+  return record(user) && typeof user.id === "string" && !!user.id;
 }
 
-Deno.serve(async (req) => {
+/**
+ * M4 safety barrier. Every paid request MUST claim a durable, atomic,
+ * authenticated quota slot. The Postgres RPC will only exist when an
+ * authorized ChunkDiary staging migration is applied. Missing => fail closed.
+ */
+async function claimQuota(req: Request, requestId: string): Promise<"allowed" | "limited" | "unavailable"> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  const auth = req.headers.get("Authorization");
+  const limit = Number(Deno.env.get("CHUNKDIARY_AI_DAILY_LIMIT") || 0);
+  if (!url || !key || !auth || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) return "unavailable";
+  try {
+    const response = await fetch(url.replace(/\/$/, "") + "/rest/v1/rpc/chunkdiary_ai_quota_claim", {
+      method: "POST",
+      headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_request_id: requestId, p_daily_limit: limit }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return "unavailable";
+    const body: unknown = await response.json();
+    if (record(body) && body.allowed === true && body.new_claim === true) return "allowed";
+    if (record(body) && body.allowed === false) return "limited";
+    return "unavailable";
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return respond(200, {});
   if (req.method !== "POST") return failure(405, "INVALID_REQUEST");
   if ((Number(req.headers.get("content-length") || 0)) > 45000) {
@@ -175,12 +210,12 @@ Deno.serve(async (req) => {
     return failure(503, "PROVIDER_UNAVAILABLE", requestId);
   }
 
-  // Fail closed: durable per-user quota/idempotency and rollout flag are M4.
-  // A client cannot turn this flag on; only the operator can set Edge secrets.
-  if (Deno.env.get("CHUNKDIARY_AI_ENABLED") !== "true" ||
-      Deno.env.get("CHUNKDIARY_QUOTA_VERIFIED") !== "true") {
+  if (Deno.env.get("CHUNKDIARY_AI_ENABLED") !== "true") {
     return failure(503, "CONFIGURATION_ERROR", requestId);
   }
+  const quota = await claimQuota(req, requestId);
+  if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
+  if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
 
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   const privatePrompt = Deno.env.get("CHUNKDIARY_PROMPT_V2");
@@ -211,4 +246,6 @@ Deno.serve(async (req) => {
     // Deliberately no error.message, diary content, raw provider output or prompt.
     return failure(502, "INVALID_MODEL_OUTPUT", requestId);
   }
-});
+}
+
+if (import.meta.main) Deno.serve(handleRequest);
