@@ -1,4 +1,4 @@
-import { handleRequest, validateResponse } from "./index.ts";
+import { handleRequest, validateResponse, classifyProviderFailure } from "./index.ts";
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -198,4 +198,20 @@ Deno.test("M4: authenticated API request UUID format, German/Italian locales", a
   assert(italian.status === 401, "Italian now accepted and reaches Auth");
   const german = await handleRequest(request({ ...validBody, targetLanguage: "German" }));
   assert(german.status === 401, "German now accepted and reaches Auth");
+});
+
+
+Deno.test("M4: upstream errors cannot leak prompts and are not misclassified as model output", () => {
+  const fakeSdkError = { status: 400, name: "ApiError", message: "SECRET_API_KEY private diary raw result" };
+  const result = classifyProviderFailure(fakeSdkError);
+  assert(result.httpStatus === 503 && result.publicCode === "PROVIDER_UNAVAILABLE",
+    "upstream request failure must be differentiated from model output");
+  assert(result.upstreamStatus === 400 && result.logCategory === "upstream",
+    "safe structured metadata only");
+  assert(!JSON.stringify(result).includes(fakeSdkError.message), "no secret/diary leakage");
+  const timeout = classifyProviderFailure({ name: "TimeoutError" });
+  assert(timeout.httpStatus === 504 && timeout.publicCode === "PROVIDER_TIMEOUT", "timeout classified");
+  const unusual = classifyProviderFailure({ status: "SECRET_TOKEN", message: "SENSITIVE" });
+  assert(unusual.upstreamStatus === null && !JSON.stringify(unusual).includes("SENSITIVE"),
+    "untrusted provider detail must not appear");
 });
