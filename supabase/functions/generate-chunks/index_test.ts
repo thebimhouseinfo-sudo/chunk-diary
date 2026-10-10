@@ -52,7 +52,7 @@ Deno.test("M3: authenticated user still fails closed when rollout disabled, no d
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     calls++;
     assert(String(input).includes("/auth/v1/user"), "unexpected backend call");
-    return Response.json({ id: "mock-account-id" });
+    return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
   }) as typeof fetch;
   try {
     const response = await handleRequest(request(validBody, true));
@@ -72,16 +72,16 @@ Deno.test("M3: authenticated user still fails closed when rollout disabled, no d
 
 Deno.test("M3: missing quota RPC denies even when rollout flag is true", async () => {
   const originalFetch = globalThis.fetch;
-  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CHUNKDIARY_AI_ENABLED", "CHUNKDIARY_AI_DAILY_LIMIT"] as const;
+  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED"] as const;
   const prev = vars.map((key) => Deno.env.get(key));
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
   Deno.env.set("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_mock");
   Deno.env.set("CHUNKDIARY_AI_ENABLED", "true");
-  Deno.env.set("CHUNKDIARY_AI_DAILY_LIMIT", "2");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "service_role_test_only_secret");
   const urls: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     urls.push(String(input));
-    if (String(input).endsWith("/auth/v1/user")) return Response.json({ id: "mock-account-id" });
+    if (String(input).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
     return new Response("missing quota claim function", { status: 404 });
   }) as typeof fetch;
   try {
@@ -91,5 +91,41 @@ Deno.test("M3: missing quota RPC denies even when rollout flag is true", async (
   } finally {
     globalThis.fetch = originalFetch;
     for (let i = 0; i < vars.length; i++) prev[i] == null ? Deno.env.delete(vars[i]) : Deno.env.set(vars[i], prev[i]!);
+  }
+});
+
+Deno.test("M4: quota claim is service-only and pins user to verified token", async () => {
+  const originalFetch = globalThis.fetch;
+  const vars = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CHUNKDIARY_AI_ENABLED"] as const;
+  const previous = vars.map((key) => Deno.env.get(key));
+  Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
+  Deno.env.set("SUPABASE_PUBLISHABLE_KEY", "test_publishable_only");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "server_only_test_key");
+  Deno.env.set("CHUNKDIARY_AI_ENABLED", "true");
+  let checked = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+    if (url.includes("/rpc/chunkdiary_ai_quota_claim")) {
+      checked = true;
+      const body = JSON.parse(String(init?.body));
+      if (body.p_daily_limit !== undefined || body.p_user_id !== "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" ||
+          body.p_request_id !== validBody.requestId ||
+          init?.headers === undefined ||
+          (init.headers as Record<string,string>).Authorization !== "Bearer server_only_test_key") {
+        throw new Error("Quota claim not constrained to server-verified user");
+      }
+      return Response.json({ allowed: false, new_claim: false });
+    }
+    throw new Error("Unexpected provider call");
+  }) as typeof fetch;
+  try {
+    const response = await handleRequest(request({ ...validBody, userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, true));
+    assert(response.status === 429 && await code(response) === "RATE_LIMITED", "quota denied call must not invoke provider");
+    assert(checked, "quota claim must be attempted");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (let i = 0; i < vars.length; i++) previous[i] == null
+      ? Deno.env.delete(vars[i]) : Deno.env.set(vars[i], previous[i]!);
   }
 });
