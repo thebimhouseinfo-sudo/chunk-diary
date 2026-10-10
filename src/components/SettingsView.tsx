@@ -20,6 +20,8 @@ import {
 import { clearAllIndexedDb } from "../db/indexedDb"; // Import to clear IndexedDB
 import { clearAllUserDb } from "../db/userDb";
 import { activeWorkspaceOwner, workspaceLocalKey } from "../db/workspaceRouter";
+import { importIntoScopedWorkspace, previewScopedImport } from "../db/scopedWorkspace";
+import { createManualWorkspaceBackup, restoreAccountPreferences } from "../services/supabase/manualBackup";
 import AccountWorkspaceSettings from "./account/AccountWorkspaceSettings";
 
 export default function SettingsView() {
@@ -124,14 +126,17 @@ export default function SettingsView() {
     setBackupMessage(null);
     try {
       // No cloud request, sign-in, payment or change to the current database.
-      const backup = await captureLegacyBackup();
+      const owner = activeWorkspaceOwner();
+      const backup = owner?.kind === "account"
+        ? await createManualWorkspaceBackup(owner.userId)
+        : await captureLegacyBackup();
       await validateLegacyBackup(backup);
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       try {
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `chunkdiary-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        anchor.download = `chunkdiary-backup-${owner?.kind === "account" ? "account" : "local"}-${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
@@ -170,6 +175,27 @@ export default function SettingsView() {
     } finally {
       setBackupBusy(false);
     }
+  };
+
+  const handleImportFileIntoAccount = async () => {
+    const owner = activeWorkspaceOwner();
+    if (owner?.kind !== "account" || !restorePreview) return;
+    setBackupBusy(true);
+    setBackupError(false);
+    try {
+      const preview = await previewScopedImport(restorePreview, owner);
+      if (!preview.canImport) throw new Error("Workspace tài khoản đã có dữ liệu; không thể nhập đè.");
+      if (!window.confirm(
+        "Chỉ phục hồi file đã kiểm tra vào workspace TRỐNG của tài khoản này? " +
+        "Dữ liệu Local beta không bị thay đổi. Xác nhận?"
+      )) return;
+      await importIntoScopedWorkspace(restorePreview, owner, { confirmed: true });
+      restoreAccountPreferences(owner.userId, restorePreview);
+      window.location.reload();
+    } catch (error) {
+      setBackupError(true);
+      setBackupMessage(error instanceof Error ? error.message : "Không thể nhập dữ liệu.");
+    } finally { setBackupBusy(false); }
   };
 
   const handleResetData = async () => {
@@ -465,6 +491,12 @@ export default function SettingsView() {
               >
                 <Upload size={18} /> Kiểm tra tệp khôi phục
               </button>
+              {restorePreview && activeWorkspaceOwner()?.kind === "account" && (
+                <button type="button" disabled={backupBusy} onClick={handleImportFileIntoAccount}
+                  className="w-full rounded-xl bg-slate-100 p-3 text-sm font-bold disabled:opacity-50">
+                  Xác nhận nhập file vào workspace tài khoản trống
+                </button>
+              )}
               {restorePreview && (
                 <div data-testid="backup-preview" className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs text-emerald-900 space-y-2">
                   <p className="font-bold">Bản sao hợp lệ — chưa nhập dữ liệu vào ứng dụng</p>
