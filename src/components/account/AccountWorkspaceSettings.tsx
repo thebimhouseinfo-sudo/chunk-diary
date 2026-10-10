@@ -4,8 +4,12 @@ import { captureLegacyBackup } from "../../db/legacySnapshot";
 import { importIntoScopedWorkspace, previewScopedImport } from "../../db/scopedWorkspace";
 import {
   createManualWorkspaceBackup, inspectManualCloudBackup,
-  uploadManualCloudBackup, restoreManualCloudBackup, restoreAccountPreferences,
+  restoreManualCloudBackup, restoreAccountPreferences,
 } from "../../services/supabase/manualBackup";
+import {
+  enqueueBackup, sendQueuedBackup, inspectBackupQueue, discardQueuedBackup,
+  type BackupQueueJob,
+} from "../../services/supabase/backupQueue";
 import type { LegacyBackup } from "../../db/legacySnapshot";
 import {
   activeWorkspaceOwner, chooseAccountWorkspace, chooseLocalWorkspace,
@@ -16,12 +20,21 @@ export default function AccountWorkspaceSettings() {
   const [email, setEmail] = useState("");
   const [identity, setIdentity] = useState<VerifiedWorkspaceUser | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queued, setQueued] = useState<BackupQueueJob | null>(null);
   const [cloudPreview, setCloudPreview] = useState<Awaited<ReturnType<typeof inspectManualCloudBackup>> | null>(null);
   const [betaPreview, setBetaPreview] = useState<{
     backup: LegacyBackup; count: number; canImport: boolean;
   } | null>(null);
   const [status, setStatus] = useState("Chưa kiểm tra phiên đăng nhập.");
   const owner = activeWorkspaceOwner();
+  const ownerId = owner?.kind === "account" ? owner.userId : null;
+  useEffect(() => {
+    if (!ownerId) return;
+    let alive = true;
+    void inspectBackupQueue(ownerId).then(state => { if (alive) setQueued(state); })
+      .catch(() => { if (alive) setStatus("Không đọc được hàng đợi sao lưu của tài khoản."); });
+    return () => { alive = false; };
+  }, [ownerId]);
 
   const verify = async (): Promise<VerifiedWorkspaceUser | null> => {
     if (!supabase) return null;
@@ -133,12 +146,36 @@ export default function AccountWorkspaceSettings() {
         "ứng dụng sẽ từ chối ghi đè và yêu cầu xem trước. Không chia sẻ corpus. Đồng ý?"
     )) return;
     const backup = await createManualWorkspaceBackup(owner.userId);
-    const receipt = await uploadManualCloudBackup(supabase, owner.userId, backup, {
-      confirmed: true, expectedRemoteChecksum: previous,
-    });
-    setCloudPreview(null); // Force a fresh cloud preview for any subsequent write.
-    setStatus("Đã sao lưu thủ công " + receipt.recordCount + " bản ghi. SHA-256: " +
-      receipt.checksum.slice(0, 16) + "…");
+    await enqueueBackup(owner.userId, backup, previous, { confirmed: true });
+    setQueued(await inspectBackupQueue(owner.userId));
+    const outcome = await sendQueuedBackup(supabase, owner.userId);
+    setQueued(await inspectBackupQueue(owner.userId));
+    if (outcome.status === "synced") {
+      setCloudPreview(null); // Force fresh preview before any new replacement.
+      setStatus("Sao lưu cloud thành công, đã xác minh checksum.");
+    } else {
+      setStatus("Backup vẫn được lưu an toàn trên thiết bị: " + outcome.status +
+        ". Chỉ thử lại khi bạn bấm nút Retry.");
+    }
+  });
+
+  const onRetryQueuedBackup = () => run(async () => {
+    if (!supabase || owner?.kind !== "account") return;
+    const outcome = await sendQueuedBackup(supabase, owner.userId);
+    setQueued(await inspectBackupQueue(owner.userId));
+    setStatus(outcome.status === "synced"
+      ? "Đã đồng bộ bản sao bị gián đoạn. Không gửi thêm dữ liệu."
+      : "Hàng đợi: " + outcome.status + ". " +
+        (outcome.errorCode ? "Mã lỗi: " + outcome.errorCode : "Chờ thêm trước khi retry."));
+  });
+
+  const onDiscardQueue = () => run(async () => {
+    if (owner?.kind !== "account") return;
+    if (!window.confirm("XÓA bản sao chưa gửi đang chờ trên thiết bị? " +
+      "Nhật ký và chunks trong workspace KHÔNG bị xóa.")) return;
+    await discardQueuedBackup(owner.userId, { confirmed: true });
+    setQueued(null);
+    setStatus("Đã bỏ hàng đợi. Dữ liệu học gốc vẫn còn nguyên.");
   });
 
   const onPreviewCloud = () => run(async () => {
@@ -239,6 +276,27 @@ export default function AccountWorkspaceSettings() {
                   className="w-full rounded-xl bg-slate-100 p-3 text-sm font-bold disabled:opacity-50">
                   Xác nhận sao chép vào workspace tài khoản (không upload)
                 </button>
+              )}
+              {queued && queued.status !== "synced" && (
+                <div className="rounded-xl bg-slate-50 p-3 space-y-2" role="status">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Backup {queued.status === "pending" ? "Pending" : "Failed"} ·
+                    Đã thử {queued.attempts} lần ·
+                    {queued.errorCode ?? "Chưa có lỗi"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Chỉ lưu trên thiết bị khi lỗi mạng; không tự động upload lại.
+                  </p>
+                  <button type="button" disabled={busy || queued.retryAfter > Date.now()}
+                    onClick={onRetryQueuedBackup}
+                    className="w-full rounded-xl bg-slate-200 p-2 text-sm font-bold disabled:opacity-50">
+                    Thử lại bản sao đang chờ
+                  </button>
+                  <button type="button" disabled={busy} onClick={onDiscardQueue}
+                    className="w-full rounded-xl border p-2 text-sm font-semibold disabled:opacity-50">
+                    Hủy hàng đợi (giữ dữ liệu học)
+                  </button>
+                </div>
               )}
               <button type="button" disabled={busy} onClick={onBackup}
                 className="w-full rounded-xl bg-vibrant-indigo p-3 text-sm font-bold text-white disabled:opacity-50">
