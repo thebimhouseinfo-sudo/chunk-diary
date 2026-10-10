@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import { Sparkles, Mic } from "lucide-react";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../db/userDb";
-import { ensureGuestSession } from "../../services/supabase/client";
-import { cloudSync } from "../../services/storage/cloudSyncAdapter";
 
 interface UserProfileSetupProps {
   show: boolean;
@@ -47,12 +45,8 @@ export default function UserProfileSetup({ show, onCompleted, onRequestMicPermis
       // Đồng thời cập nhật localStorage để đảm bảo các luồng kiểm tra nhanh đồng bộ theo
       localStorage.setItem("user_settings", JSON.stringify(updatedSettings));
 
-      try {
-        await ensureGuestSession();
-        await cloudSync.syncUserProfile(updatedSettings);
-      } catch (syncErr) {
-        console.warn("Cloud guest profile sync skipped:", syncErr);
-      }
+      // Keep onboarding local. Creating a cloud identity / uploading a profile
+      // requires a separate, user-approved backup/sync flow.
       
       onCompleted(updatedSettings);
       
