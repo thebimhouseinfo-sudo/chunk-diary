@@ -1,0 +1,44 @@
+name: M6 Verified Workspace Isolation
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'src/db/workspaceRouter.ts'
+      - 'src/db/scopedWorkspace.ts'
+      - 'src/db/indexedDb.ts'
+      - 'src/db/userDb.ts'
+      - 'src/components/story_chat/db/storySessionDb.ts'
+      - 'src/components/story_chat/StoryChatView.tsx'
+      - 'src/components/SettingsView.tsx'
+      - 'src/components/account/**'
+      - 'src/App.tsx'
+      - 'src/utils/tts.ts'
+      - 'tests/workspace-routing.test.ts'
+      - 'docs/contracts/ACCOUNT_WORKSPACE_V1.md'
+      - '.github/workflows/m6-workspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  owner-routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install lockfile dependencies
+        run: npm ci
+      - name: Install test-only packages
+        run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5 playwright@1.56.1
+      - name: Typecheck
+        run: npm run lint
+      - name: Production bundle build
+        run: npm run build
+      - name: Identity-isolation and read/write regression
+        run: node --import tsx --test tests/workspace-routing.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts
