@@ -18,7 +18,9 @@ import {
   speakText, voicePreviewText, type BrowserVoiceOption
 } from "../utils/tts";
 import { clearAllIndexedDb } from "../db/indexedDb"; // Import to clear IndexedDB
-import { clearAllUserDb } from "../db/userDb"; // Import to clear userDb
+import { clearAllUserDb } from "../db/userDb";
+import { activeWorkspaceOwner, workspaceLocalKey } from "../db/workspaceRouter";
+import AccountWorkspaceSettings from "./account/AccountWorkspaceSettings";
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<UserSettings>({
@@ -44,14 +46,21 @@ export default function SettingsView() {
   const currentVoiceLanguage = learningLanguageText.split(",")[0].trim() || "English";
 
   useEffect(() => {
-    const saved = localStorage.getItem("user_settings");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSettings(parsed);
-      if (parsed.learningLanguages && parsed.learningLanguages.length > 0) {
-        setLearningLanguageText(parsed.learningLanguages.join(", "));
+    let live = true;
+    void (async () => {
+      // Account settings MUST come from its own IDB store, never another
+      // owner's or unscoped beta localStorage.
+      const fromDb = await getSettings();
+      const saved = localStorage.getItem(workspaceLocalKey("user_settings"));
+      const parsed = fromDb ?? (saved ? JSON.parse(saved) as UserSettings : null);
+      if (live && parsed) {
+        setSettings(parsed);
+        if (parsed.learningLanguages?.length) {
+          setLearningLanguageText(parsed.learningLanguages.join(", "));
+        }
       }
-    }
+    })().catch(() => { /* keep safe defaults; no cross-owner fallback */ });
+    return () => { live = false; };
   }, []);
 
   useEffect(() => {
@@ -82,7 +91,7 @@ export default function SettingsView() {
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Parse target languages from comma-separated string
@@ -97,9 +106,15 @@ export default function SettingsView() {
       onboarded: true
     };
 
-    setSettings(updated);
-    localStorage.setItem("user_settings", JSON.stringify(updated));
-    setSaveSuccess(true);
+    try {
+      await saveSettings(updated);
+      localStorage.setItem(workspaceLocalKey("user_settings"), JSON.stringify(updated));
+      setSettings(updated);
+      setSaveSuccess(true);
+    } catch {
+      alert("Không thể lưu cài đặt vào workspace hiện tại.");
+      return;
+    }
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
@@ -158,12 +173,20 @@ export default function SettingsView() {
   };
 
   const handleResetData = async () => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa tất cả dữ liệu ứng dụng? Hành động này không thể hoàn tác!")) {
+    if (activeWorkspaceOwner()?.kind === "account") {
+      alert("Chức năng xóa dữ liệu tài khoản đang khóa cho đến khi có quy trình sao lưu và phục hồi an toàn.");
+      return;
+    }
+    if (window.confirm("Bạn có chắc chắn muốn xóa tất cả dữ liệu local beta? Hành động này không thể hoàn tác!")) {
       try {
         await clearAllIndexedDb();
         await clearAllUserDb();
-        localStorage.clear();
-        alert("Tất cả dữ liệu đã được xóa. Ứng dụng sẽ tải lại.");
+        // Never wipe the entire origin's storage: it contains Supabase Auth
+        // tokens and possibly other apps' credentials.
+        for (const key of ["user_settings", "story_chat_settings", "story_chat_has_seen_first_greeting"]) {
+          localStorage.removeItem(key);
+        }
+        alert("Dữ liệu local beta đã được xóa. Ứng dụng sẽ tải lại.");
         window.location.reload();
       } catch (error) {
         console.error("Lỗi khi xóa dữ liệu:", error);
@@ -185,6 +208,7 @@ export default function SettingsView() {
         </p>
       </div>
 
+      <AccountWorkspaceSettings />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 text-left">
         {/* Main Settings Card */}
         <form onSubmit={handleSaveSettings} className="lg:col-span-8 space-y-6">
