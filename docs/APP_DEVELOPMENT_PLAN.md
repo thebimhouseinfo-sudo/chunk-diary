@@ -1,5 +1,5 @@
 # ChunkDiary — Detailed App Development Plan
-Version: 1.1 | Date: 2026-10-10 | Project: GSA P-493D | Status: PLANNED / NOT IMPLEMENTED
+Version: 1.2 | Date: 2026-10-10 | Project: GSA P-493D | Status: REPLANNED AFTER CR / NOT IMPLEMENTED
 
 ## 0. Decisions, boundaries and baseline
 - **Development integration branch**: `codex/supabase-app`. All new-app work integrates here; short-lived task branches only if isolation is essential, merged promptly. Do not accumulate disconnected commits/branches.
@@ -8,7 +8,7 @@ Version: 1.1 | Date: 2026-10-10 | Project: GSA P-493D | Status: PLANNED / NOT IM
 - **Product**: local-first multilingual chunk-based learning, Supabase as optional cloud identity/sync and new AI backend; future native iOS/Android share data contracts and backend with web.
 - **Platform phase boundary (Human decision 2026-10-10)**: current implementation and release are **browser Web** (desktop and mobile browser, including browser-managed mic permission and browser speech APIs). Offline TTS/voice availability, native OS microphone permissions, background audio, audio-session interruptions and installed native voices belong to a **separate later Native App phase**, not Web CP5/CP8. Browser speech can be network-dependent; do not promise offline speech.
 - **Absolute invariants**: (I1) same-origin old beta data remains readable without registration, (I2) no deletion/reset/ID regeneration/loss of training stats in automatic migration, (I3) prompts private at runtime and absent from public frontend/source artifact, (I4) never upload raw diary/corpus without explicit product consent, (I5) user can **only choose a voice** in voice UX—no speed/pitch/quality controls; voice/accent is a property of chosen voice, (I6) cloud failure never prevents local learning.
-- **Known exposure**: existing public branch includes prompt material in `supabase/functions/generate-chunks/index.ts` and `docs/app script/code.gs.txt`. Removing it from current files does not retroactively erase public Git history. Treat old prompt as disclosed; produce a new private prompt revision without committing it to public Git; review historical secrets separately.
+- **Known exposure**: public branch/history contains legacy generation prompts in **all three surfaces**: `supabase/functions/generate-chunks/index.ts`, `docs/app script/code.gs.txt`, and root `server.ts` (Gemini and OpenAI-compatible paths). Inventory every other source, test fixture, generated artifact, deployment and error path. Removing current source cannot retract Git history; assume old prompts disclosed and introduce new private prompt revisions. Review historical provider secrets separately.
 
 ## 1. Existing system inventory (read-only findings)
 - Web: React + TypeScript + Vite; story-generation in `src/components/story_chat/StoryChatView.tsx` and `src/utils/aiService.ts`.
@@ -19,6 +19,7 @@ Version: 1.1 | Date: 2026-10-10 | Project: GSA P-493D | Status: PLANNED / NOT IM
 - `tts.ts` presently picks first matching browser voice and forces rate 0.85; `VoiceInput.tsx` is hardcoded to `vi-VN`. Speech scoring estimates text-match, not acoustic pronunciation quality.
 - Existing prompt/response assumes English pivot and `englishNarrative`. English pivot must be preserved for legacy records, but must NOT be a mandatory translation hop for every target language.
 - Existing `docs/migration/BETA_TRANSITION_DESIGN.md` (2026-10-10) supersedes conflicting older transition steps; preserve beta Apps Script until the tested switch.
+- **CR evidence**: GSA `VERIFICATION/01a124b6-b154-7908-b376-f97d75c49650.json` independently found 2 CRITICAL and 3 IMPORTANT findings; one offline-native finding is explicitly deferred by Human. The 4 active findings must have owner/surface/test proof before the replacement plan may be declared reviewed.
 
 ## 2. Target architecture and contracts
 ```
@@ -40,8 +41,12 @@ Web React (now) / iOS + Android (later)
                 └── user-scoped backup / sync (RLS)
 ```
 - Define `LanguageProfile`: normalized BCP-47 code, optional script and region/accent, display label, supported voice set, phonetic notation rules, learning-level framework, tokenizer/normalizer strategy.
+- **UX_FIRST (Web)**: specify behavior/permissions and identity/privacy states before implementing UI; reuse existing Settings/onboarding/Story Chat shell. Temporary browser UI: voice chooser + preview, backup status, account identity/guest ownership confirmation, distinct AI-processing notice and sync opt-in. Any material unapproved consent/account interaction gets Human review before UI code. Frontend Jobs require `ui-coder-frontend` skill.
 - Define canonical `SemanticUnit` using source-language text and meaning; target-language chunks attach locale, script, phonetic entries, optional pivots. Keep `englishPivot` / `englishNarrative` as legacy-compatible optional metadata. **Do not remove fields from historical records.**
 - A single `VoicePreference` per learning language/locale stores selected provider + stable voice identifier; never persist a requested speed/pitch/quality setting. On unavailable voice, silently fallback to an available correct-language voice with a compact nonblocking notice.
+- **Local identity boundaries**: treat the beta v4 DB/StoryChatDB/localStorage as legacy unclaimed local data until ownership is established. Define isolated logical workspaces for local guest and for each authenticated identity (prefer distinct scoped local repositories/DBs with original logical IDs retained, subject to M1 feasibility spike); preserve the untouched legacy data as import source. Unclaimed legacy data remains visible offline without account. No implicit assignment to the currently signed-in Supabase user. Explicitly choose/copy/merge into one account only on consent with record-count preview and rollback.
+- **Account lifecycle**: account A ↔ B switching must hide prior user's diaries, StoryChat sessions, settings, voice choices and unsent queue from UI, backups and model inputs; logging out switches to local guest workspace without deleting any data. Asynchronous uploads and restores bind to origin identity and cancel/discard stale results on identity switch; owned records are never silently imported into another account. Test multi-tab switching and cross-account same-ID records.
+- **Cloud record identity**: for row-per-record tables, use **user-scoped uniqueness**, e.g. `(user_id, id)` composite primary/unique key, and explicit Supabase `onConflict: "user_id,id"`. Preserve original local record id within scope, never rewrite unrelated users' rows or use a global `id` PK. Plan migration of existing tables and RLS as one verified staged change; account-owned backup snapshots key by user id.
 - All backend contracts versioned (schema, request, prompt, migration, language pack). Voice and account interfaces must not import React UI components.
 
 ## 3. Implementation milestones and task dependencies
@@ -51,6 +56,8 @@ Tasks:
 - M0.1 Freeze exact main beta data schema, representative sanitized export fixtures from each existing store and StoryChatDB, locale/profile combinations, sample old and recent records; record branch head/commit.
 - M0.2 Build hermetic migration/contract test harness, negative controls to prove test fails on known defect; require reviewer to inspect test script at CP0.
 - M0.3 Define canonical API contracts, branch integration policy, staging Supabase identity/secret separation and no-production-touch safeguards.
+- M0.4 Freeze explicit identity model: legacy-unclaimed local workspace, unlinked guest, signed-in account scopes, safe guest adoption preview/confirmation, logout/switch semantics, cross-tab pending operations and storage namespace decision; inspect existing on-device ownership evidence before binding anything. Use a small feasibility spike on real v4 fixture before confirming a local DB namespace strategy.
+- M0.5 Define privacy processing matrix: user-triggered AI generation sends diary text to a third-party model; clear upfront processing disclosure (recipient, purpose, retention/abuse handling) and explicit user action, independent from optional persistent cloud backup and corpus-sharing consent. Choose provider terms/retention before enabling; default provider request/log redaction.
 Outputs: baseline fixture pack with counts/hash/manifests; `docs/contracts/*`; reproducible test commands and evidence.
 PASS: baseline known, all fixture formats load, negative-control test rejects invalid mutation; no changes to production.
 
@@ -58,10 +65,11 @@ PASS: baseline known, all fixture formats load, negative-control test rejects in
 Tasks:
 - M1.1 Audit all persistence code incl. `src/db/indexedDb.ts`, `src/db/userDb.ts`, `src/db/userProgressDb.ts`, `StoryChatDB`, localStorage; enumerate relation and ownership graph.
 - M1.2 Add additive reader/normalizer with `schemaVersion`, field defaults, unknown-field preservation for backup; maintain stable IDs, timestamps, `stars`, `timesPracticed`, ratings, semantics, session data.
+- M1.2a Implement **identity-scoped local repository** for the new app and read-only legacy import; preserve original logical record keys and all stats, even when two accounts hold identical IDs. Keep legacy v4/StoryChatDB intact through verified claim/copy. Unclaimed guest data may be used without login. Data previously owned by Account A is never visible to B or auto-adopted on sign-in. Consider per-account DBs (opaque non-PII scope) to avoid global key collisions; choose after fixture feasibility test, not by changing key paths destructively.
 - M1.3 Prefer keep IndexedDB v4 when adding JSON-object fields. If stores/indexes require version increment, implement and test upgrade **and rollback limitations**: older beta may throw VersionError on higher-version DB; require compatible rollback build or pre-upgrade full export/recovery. Never delete/recreate stores automatically.
-- M1.4 Implement comprehensive export/import/snapshot with version, per-store count, checksum, transaction validation, dry-run diff and deterministic merge conflict rules. Exclude auth tokens/secrets. Verify completion before showing Backed up.
+- M1.4 Implement comprehensive export/import/snapshot **inside the selected identity scope** with version, per-store count, checksum, transaction validation, dry-run diff, legacy-claim consent and deterministic merge conflict rules. Exclude auth tokens/secrets. Verify completion before showing Backed up. A backup/restore must not merge Account A's data into B's scope without explicit user-controlled import flow.
 - M1.5 Reconcile origin migration: local data is origin-bound; support JSON export/import or a verified old-origin bridge for GitHub Pages users. Redirect alone is not transfer.
-PASS: same-origin main v4 fixture opens without account; CRUD/reload/new chunks do not alter old IDs/stats; blank/newer cloud never erases local; full cross-device restore preserves counts, relations, StoryChat session and settings; offline/network-failure safe.
+PASS: same-origin main v4 fixture opens without account; CRUD/reload/new chunks do not alter old IDs/stats; blank/newer cloud never erases local; full cross-device restore preserves counts, relations, StoryChat session and settings; offline/network-failure safe. Additional negative scenario: same device guest/Account A/Account B with overlapping logical IDs switches without cross-display, cross-sync, or overwrite; unknown old data remains unclaimed until confirmed.
 
 ### M2 — Multilingual domain + private language modules (depends M0 and M1 contract; CP2)
 Tasks:
@@ -74,11 +82,12 @@ PASS: 20+ consent-safe bilingual fixtures per launch language, with numbers, nam
 
 ### M3 — Private prompt backend & AI contract (depends M0, M2; CP3)
 Tasks:
-- M3.1 Create **new** private versioned prompt assets outside public Git, e.g. backend-only secret/private secure store with restricted access; source repo contains only loader, prompt id/version and output contract. A published source repository must not include actual private prompt text.
-- M3.2 Prompt composition server-side: language-neutral semantics + target-language rules + provider-independent validated input. Client sends ONLY user content/settings; never full prompt or authority-bearing model/system instructions. Ensure no prompt in bundle, response, errors, telemetry, snapshots or client-accessible storage.
+- M3.1 Inventory **every prompt entry point**: `supabase/functions/generate-chunks/index.ts`, `docs/app script/code.gs.txt`, both Gemini and OpenAI-compatible paths in root `server.ts`, development/mock configurations, test data, build/deployment outputs and public git history. Mark old versions disclosed; create **new** private versioned prompt assets outside public Git in a backend-only store with restricted access; source repo contains only loader, prompt id/version and output contract. A published source repository must not include new private prompt text.
+- M3.2 Prompt composition server-side: language-neutral semantics + target-language rules + provider-independent validated input. Client sends ONLY user content/settings; never full prompt or authority-bearing model/system instructions. Ensure no new private prompt in bundle, response, errors, telemetry, snapshots or client-accessible storage. Deprecate or secure the legacy Express paths rather than overlooking them; no claim that public historical prompts can be made secret again.
+- M3.2a Distinguish **AI_PROCESSING** (diary transmitted on explicit Generate action for model processing, visible disclosure and verified provider retention policy) from **BACKUP_SYNC** (persistent user-owned cloud copy, independently opted into) and **CORPUS_SHARE** (separate optional consent, OFF by default). Never use one consent to authorize all three; no raw diary text in client/server logs or diagnostics.
 - M3.3 Establish `GenerateChunksRequest/Response` version 2 with backward adapter for beta. Strict bounds for diary length, semantic-group count, token budget, required fields and chunk counts (one common, at most one personalized for each unit). Protect semantics, no inventions, conservative professional personalization.
 - M3.4 Implement auth/authorization and provider key separation; do not confuse Supabase publishable key with service key. Use requestId for idempotent retry, timeout, stable error codes, version tracking without logging raw diary.
-- M3.5 Add contract mock, malformed output, prompt-injection, forced errors and leakage scans across source, built frontend, network traces and logs; historical public content is marked disclosed, not claimed retractable.
+- M3.5 Add contract mock, malformed output, prompt-injection, forced errors and leakage scans across **all prompt sources including `server.ts`**, current public source, built frontend, network traces, provider errors and logs; historical public content is marked disclosed, not claimed retractable. Verify network capture separates transient AI-processing transfer from persistent sync/corpus requests; failed requests and retries never log diaries.
 PASS: no new private prompt content in public artifacts; no prompt or provider secrets in client traffic; AI semantic/locale checks PASS; invalid generation never partially persists local data.
 
 ### M4 — Production-capable Supabase AI (depends M3; CP4)
@@ -102,15 +111,15 @@ PASS: listen/preview/switch works on desktop browsers and mobile browsers (iOS S
 ### M6 — Auth, full cloud sync, consent and security (depends M1, M3; CP6)
 Tasks:
 - M6.1 Use dedicated ChunkDiary Supabase staging project, never reuse unverified project. Auth anonymous optional, Google/email linking and account-switch identity handling; test account linking retains ownership.
-- M6.2 Implement full encrypted-in-transit (TLS) user-scoped backup/restore of approved stores and preferences. Consent for diary/corpus upload is explicit and separate. Anonymous session is not a guarantee of cross-device recovery without linked identity.
-- M6.3 Queue changes durably with pending/synced/failed state, retry/backoff, idempotent upserts and conflict resolution based on provenance/revision rather than blindly overwriting newer local. Stats in `chunks` authoritative; avoid stale `userProgress` overwrite.
-- M6.4 RLS for all exposed tables, ownership checks for SELECT/INSERT/UPDATE/DELETE, service permissions least privilege. Fix corpus UPDATE policy for upsert or replace the operation with an allowed insert-only contract. Handle account isolation and privilege misuse.
-- M6.5 Test two users/two devices, different identities on same browser, expired tokens, interrupted link, offline edits, quota, failed restore, double retry; snapshot restore must be reversible.
+- M6.2 Implement full encrypted-in-transit (TLS) **identity-scoped** backup/restore of approved stores and preferences. Persistent diary backup, generated-corpus sharing and transient AI-processing disclosure are **separate** product flows; corpus sharing default OFF. Anonymous session is not a guarantee of cross-device recovery without linked identity.
+- M6.3 Queue changes durably with pending/synced/failed state, retry/backoff, idempotent upserts and conflict resolution based on provenance/revision rather than blindly overwriting newer local. Queue entries MUST persist owner identity and authorized consent scope; on account switching/sign-out, abort in-flight requests and forbid retries under a new session. Stats in `chunks` authoritative; avoid stale `userProgress` overwrite.
+- M6.4 RLS for all exposed tables, ownership checks for SELECT/INSERT/UPDATE/DELETE, service permissions least privilege. **Replace global text PK** in `user_progress` and `generated_chunk_corpus` with user-scoped uniqueness e.g. `PRIMARY KEY(user_id,id)` (or equivalent explicit unique key), preserving existing row ownership/IDs; pair with `upsert(..., { onConflict: "user_id,id" })`. Fix corpus UPDATE policy for upsert or implement a tested insert-only contract. Run collision fixtures with the same `id` in two accounts and confirm both can independently insert/select/update; verify attempted cross-owner writes denied. Migration SQL changes ONLY on staging until separately authorized.
+- M6.5 Test two users/two devices, different identities on same browser **sharing identical imported record IDs**, logout, interrupted guest adoption, multi-tab identity change, orphaned pending queue, expired tokens, interrupted link, offline edits, quota, failed restore, double retry; snapshot restore must be reversible.
 PASS: full backup/restore and two-device sync complete without data loss or cross-user access; RLS verified on live staging DB; no silent data upload; fail-safe local experience.
 
 ### M7 — User-facing UX + beta transition (depends M1, M5, M6; CP7)
 Tasks:
-- M7.1 Account screen: Local only / Pending / Backed up / Failed, Google/email link, manual sync, backup/restore with integrity status. Avoid implying sign-in alone implies backup.
+- M7.1 Account screen: Local only / Pending / Backed up / Failed, Google/email link, manual sync, backup/restore with integrity status. Avoid implying sign-in alone implies backup. Identity switch must hide former account workspace; first claim of unowned beta data offers a transparent preview, consent and cancel option without deletion; show privacy disclosure before first AI generation and explicit independent backup/corpus opt-ins.
 - M7.2 Language selection according to LanguagePack support; voice choice + preview only (no speed/quality/accent selector); persist choice per learning language and platform availability.
 - M7.3 For current beta, prepare **isolated** transition from stable main: account and backup bridge, 7-day notice starting **actual deployment date**. Keep Apps Script for beta AI during transition. Create short-lived `codex/beta-account-sync` from stable baseline ONLY if needed, merge after tests; reconcile resulting main updates back into development branch.
 - M7.4 Test no-account reading of old data; no forced re-onboarding; no wipe on day 7; user-facing migration wording accurate.
@@ -119,7 +128,7 @@ PASS: end-to-end old-beta-to-new-app via same origin and export/bridge; Account/
 ### M8 — Integrated E2E, hardening, native handoff and release (depends M4, M6, M7; CP8)
 Tasks:
 - M8.1 Reviewer audits code **and test scripts** at checkpoints; red/green negative controls, realistic datasets, browser/device QA, security checks, parity fixtures and build.
-- M8.2 Real staging Supabase + Vercel preview tests for existing beta and new users, English + other launch languages, **browser** microphone permission (allow/deny/retry where supported), Web Speech recognition, browser voice availability/fallback, sync failure and recovery; no native OS mic/offline-audio tests.
+- M8.2 Real staging Supabase + Vercel preview tests for existing beta and new users, English + other launch languages, **browser** microphone permission (allow/deny/retry where supported), Web Speech recognition, browser voice availability/fallback, sync failure and recovery; no native OS mic/offline-audio tests. Explicit identity-isolation and identical-ID cross-user cases, stale cloud sync queue on switching, and AI-processing privacy network traces are mandatory.
 - M8.3 Measure data integrity (IDs/counts/stats/checksums), AI quality, TTS listening quality, P50/P95 latency, token/TTS cost, retry rates, consent and privacy. Record explicit acceptance evidence and unresolved items.
 - M8.4 Prepare reversible cutover and rollback: retain beta deployment, export old data before risky schema updates; test rollback build after any IndexedDB version bump. Never roll back by deleting data created after cutover.
 - M8.5 Native handoff **specification only** (shared domain/contracts, local repository + audio adapters, auth deep link/callback); implementation of iOS/Android binaries, native microphone permissions, audio sessions/interruptions/background behavior, platform STT/TTS, installed/offline voices and native-device QA is a later separately approved phase, explicitly **out of scope** of this Web release.
@@ -132,7 +141,7 @@ PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage b
 - `src/utils/tts.ts`, new `src/services/audio/*`, `src/components/SettingsView.tsx`, `src/components/PracticeGameView.tsx`: voice listing, preview, persistence, fallback, no speed UI.
 - `src/components/story_chat/components/VoiceInput.tsx`, `src/utils/speech.ts`: correct language capture and honest scoring labels.
 - `src/services/supabase/*`, `src/services/storage/*`, `supabase/migrations/*`: Auth, consent, sync queue, full snapshot and RLS.
-- `supabase/functions/generate-chunks/*`: server-only prompt reference, validation, quota and provider boundary.
+- `supabase/functions/generate-chunks/*`, **root `server.ts`**, `docs/app script/code.gs.txt`: complete legacy prompt exposure inventory, replace/retire public generation prompt routes, server-only new prompt reference, validation, quota and provider boundary.
 - `docs/ai/*`, `docs/migration/*`, `docs/contracts/*`, `tests/*`: implementation specification, fixture/evidence and acceptance commands.
 - Private prompt assets **must NOT be committed** to the public repository. Any historical prompt remains disclosed.
 
@@ -143,9 +152,13 @@ PASS: all CP0–CP8 evidence attached, no critical/open data or prompt leakage b
 - DATA-04: full export/import clean browser; per-store checksums and foreign key-like relations match.
 - DATA-05: power/network interruption mid-sync + retry; latest local data preserved; no duplicate rows.
 - DATA-06: higher IndexedDB version rollback tested with suitable backward-compatible build or explicit pre-upgrade recovery path.
-- PRIV-01: prompt text absent from public current source, frontend bundle, network responses, client logs; historical exposure disclosed.
-- PRIV-02: raw diaries not uploaded to cloud/corpus without distinct explicit consent.
+- DATA-07: account A, account B and unclaimed beta guest on **same browser** retain isolated library, StoryChat session, settings and pending queues, including identical legacy IDs; switch, logout, restore and delayed request never leak/overwrite.
+- DATA-08: claiming previously unowned beta data requires an explicit preview/confirmation; cancelling leaves original local data intact; repeat import is idempotent.
+- PRIV-01: **new private prompt versions** absent from current public source including `server.ts`, Edge Function and legacy docs, frontend bundle, network responses and logs. Historical published prompts remain disclosed; do not assert retroactive secrecy.
+- PRIV-02: raw diaries not uploaded for persistent backup/corpus without **independent** explicit opt-ins, with corpus OFF by default.
+- PRIV-03: client explains transient third-party AI processing of diary content before first generation; explicit Generate action authorizes only processing, not storage/corpus. Verify provider retention/log policy and network traces, no raw diary in error/telemetry.
 - SEC-01: staging RLS cross-user SELECT/INSERT/UPDATE/DELETE denied; authorized owner upsert succeeds.
+- SEC-02: identical local IDs can coexist across two cloud accounts via `(user_id,id)` or equivalent keys, with correct upsert conflict target, row ownership, and no cross-user mutation.
 - AI-01: one common + max one personalized per semantic unit; meaning preserved; hallucination rejection.
 - AI-02: English, Mandarin, Japanese, Korean + one additional Latin target pass supported language test fixtures.
 - AI-03: malformed/untrusted provider output rejected atomically; no prompt returned in errors.
@@ -172,6 +185,8 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - Where to host private versioned prompts (Edge secret store for simple deployment vs separately restricted private repository/store for version history).
 - Real-user beta fixture availability with opt-in and sanitization; never copy identifiable diaries into public tests.
 
-**CR scope disposition (2026-10-10):** The CR observation requesting offline voice acceptance is **deferred / out of scope for Web**, per the Human platform-phase clarification; it is not a Web release gate. Other independent CR findings regarding account-local ownership, per-user SQL key collisions, prompt inventory and AI-processing privacy remain open for Planner correction and retest.
+**CR disposition v1.2 (2026-10-10):** CR-01 local-account isolation → M0.4/M1.2a/M6.3/M6.5/M7.1, DATA-07/08. CR-02 global SQL ID conflict → M6.4, SEC-02. CR-03 `server.ts` prompt exposure → M3.1/M3.5 and file map, PRIV-01. CR-04 AI processing vs persistent backup consent → M0.5/M3.2a/M6.2/M7.1, PRIV-02/03. CR-05 offline voice → **DEFERRED**, independent Native phase as explicitly instructed by Human (no Web release gate). These are planned remediations, **not implemented fixes**; each requires execution evidence and Tester/Reviewer checks at CP1, CP3, CP6 and CP8.
+
+**Traceability / ownership:** CR-01 owner M1 (local repository) + M6 (Auth/Sync); CR-02 owner M6 (SQL/RLS); CR-03 owner M3 (AI privacy); CR-04 owner M3 (privacy contract) + M6 (sync) + M7 (UX notice). M0 freezes evidence/consent/identity contracts first. No other repository write scope. Phase Web = UX_FIRST, reuse current shell for temporary UI; frontend tasks require ui-coder-frontend. Changes to consent texts, legacy data assignment or production cutover are Human Gates.
 
 **Document scope**: actionable master roadmap. It does not authorize implementation, deployment or release by itself.
