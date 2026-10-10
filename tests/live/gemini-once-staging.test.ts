@@ -60,8 +60,13 @@ test("M4: exactly one authenticated synthetic provider request, then duplicate q
     // Exactly one valid NEW request ID. The private quota RPC counts claims
     // atomically, cap=1 globally, even across simultaneous users.
     const response = await makeRequest();
-    assert.equal(response.status, 200, "Gemini staging smoke failed: HTTP " + response.status);
-    const packet = await response.json() as Record<string, unknown>;
+    const packet = await response.json() as { success?: boolean; promptVersion?: string; result?: unknown; error?: { code?: string } };
+    // Only print a safe status/code; no prompt, diary, token or provider body.
+    console.log("Gemini staging first request status:", response.status,
+      "code:", packet.error?.code ?? "none");
+    assert.equal(response.status, 200,
+      "Gemini staging smoke failed; HTTP=" + response.status +
+      ", code=" + (packet.error?.code ?? "unspecified"));
     assert.equal(packet.success, true);
     assert.equal(packet.promptVersion, "v2.0", "private prompt version mismatch");
     const validated = validateGeneratedResponse(packet.result, "Vietnamese", "Japanese");
