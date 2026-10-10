@@ -12,7 +12,8 @@
     "start": "node dist-server/server.cjs",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-server']) fs.rmSync(p,{recursive:true,force:true});\"",
     "lint": "tsc --noEmit",
-    "test:legacy": "node --import tsx --test tests/legacy-compat.test.ts"
+    "test:legacy": "node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts",
+    "test:snapshot": "node --import tsx --test tests/legacy-snapshot.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
