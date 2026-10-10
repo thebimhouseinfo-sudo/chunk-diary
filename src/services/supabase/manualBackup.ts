@@ -63,7 +63,7 @@ export async function createManualWorkspaceBackup(ownerUserId: string): Promise<
 /** User-initiated only: NEVER triggered by login, AI generation or profile save. */
 export async function uploadManualCloudBackup(
   client: SupabaseClient, ownerUserId: string, backup: LegacyBackup,
-  options: { confirmed: true; expectedRemoteChecksum?: string | null },
+  options: { confirmed: true; expectedRemoteChecksum?: string | null; signal?: AbortSignal },
 ): Promise<BackupReceipt> {
   if (options?.confirmed !== true) throw new Error("Explicit backup consent required");
   await verifyLinkedOwner(client, ownerUserId);
@@ -84,10 +84,14 @@ export async function uploadManualCloudBackup(
   // Null expectation means create ONLY IF ABSENT, never overwrite a newer
   // backup from another device. Existing backup needs an explicit preview and
   // an expected checksum confirmed by the user.
-  const { data, error } = await client.rpc("chunkdiary_snapshot_cas_write", {
+  if (options.signal?.aborted) throw new Error("Upload aborted");
+  const request = client.rpc("chunkdiary_snapshot_cas_write", {
     p_payload: payload,
     p_expected_checksum: options.expectedRemoteChecksum ?? null,
   });
+  const { data, error } = await (options.signal
+    ? request.abortSignal(options.signal)
+    : request);
   if (error) throw new Error("Cloud backup CAS failed: " + error.code);
   if (!data || typeof data !== "object" || data.allowed !== true ||
       data.checksum !== valid.checksum) {
