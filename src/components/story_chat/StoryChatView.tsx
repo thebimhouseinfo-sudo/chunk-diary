@@ -506,7 +506,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
             id: muId,
             diaryId: savedDiaryId,
             nativeText: unit.nativeText,
-            englishPivot: unit.englishText,
+            sourceText: unit.sourceText,
+            sourceLanguage: userSettings.nativeLanguage,
+            targetLanguage: targetLang,
+            ...(unit.englishText ? { englishPivot: unit.englishText } : {}),
             order: unit.order
           });
 
@@ -521,6 +524,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               meaningUnitId: muId,
               semanticGroupId: rawChunk.semanticGroupId || undefined,
               language: targetLang,
+              targetLocale: apiResponse.targetLanguage || targetLang,
               text: rawChunk.text,
               meaning: rawChunk.meaning || unit.nativeText || "",
               ipa: rawChunk.ipa || "",
@@ -542,10 +546,10 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
             };
             createdChunksList.push(newChunk);
 
-            // --- Background save to englishChunkDb (English pivot for commercial packaging & merge) ---
-            // Case 1: Learning non-English → rawChunk.english is the English pivot
-            // Case 2: Learning English → the target chunk IS the English chunk
-            const englishText = rawChunk.english || rawChunk.text;
+            // Only a genuine English chunk/pivot belongs in this optional
+            // English corpus; do not mislabel other target languages.
+            const targetIsEnglish = (apiResponse.targetLanguage || targetLang).toLowerCase().startsWith("en");
+            const englishText = rawChunk.english || (targetIsEnglish ? rawChunk.text : "");
             if (englishText) {
               auxiliaryWrites.push(saveEnglishChunk({
                 id: crypto.randomUUID(),
@@ -566,7 +570,7 @@ export default function StoryChatView({ onBack, onNavigate, onStartPractice }: S
               nativeText: unit.nativeText || "",
               targetLanguage: targetLang,
               targetChunkText: rawChunk.text,
-              targetMeaning: rawChunk.english || "",
+              targetMeaning: rawChunk.meaning || "",
               ipaOrPinyin: rawChunk.ipa || rawChunk.romanization || "",
               chunkType,
               specialty: userSettings.specialty,
