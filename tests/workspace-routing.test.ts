@@ -4,7 +4,7 @@ import { IDBFactory as FakeIDBFactory } from "fake-indexeddb";
 import {
   activeWorkspaceOwner, activeWorkspaceDatabaseName, chooseAccountWorkspace,
   chooseLocalWorkspace, initializeWorkspaceRouting, resetWorkspaceRuntime,
-  selectedWorkspaceUser, workspaceLocalKey,
+  selectedWorkspaceUser, workspaceLocalKey, requiresExplicitLocalChoice,
 } from "../src/db/workspaceRouter.ts";
 import { openDB, getDiaries, saveDiary, getChunks, saveChunk } from "../src/db/indexedDb.ts";
 import { getSettings, saveSettings } from "../src/db/userDb.ts";
@@ -84,9 +84,13 @@ test("M6 negative controls: stale/anonymous/mismatched Auth never reopens privat
   resetWorkspaceRuntime(); // simulate browser reload
   assert.equal(await initializeWorkspaceRouting(verifier(B), storage), null, "wrong JWT must fail closed");
   assert.equal(activeWorkspaceDatabaseName(), "LanguageChunkDiaryDB");
+  assert.equal(requiresExplicitLocalChoice(storage), true,
+    "remembered account must show explicit owner gate, not silently open beta");
   assert.equal(await initializeWorkspaceRouting(verifier(A,true), storage), null, "anonymous cannot reopen linked owner");
   assert.equal(await initializeWorkspaceRouting(async () => { throw new Error("network failure"); },storage),null);
+  assert.equal(requiresExplicitLocalChoice(storage), true);
   assert.deepEqual(await initializeWorkspaceRouting(verifier(A),storage),{kind:"account",userId:A});
+  assert.equal(requiresExplicitLocalChoice(storage), false);
 });
 
 test("M6 negative controls: arbitrary account string and cross-user preference are rejected", async () => {
