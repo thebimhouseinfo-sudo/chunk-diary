@@ -159,3 +159,24 @@ test("M1 empty but existing beta database is valid and does not require login", 
   assert.equal(backup.storySessionCount, 0);
   assert.deepEqual(backup.snapshot.localSettings, {});
 });
+
+test("NEGATIVE CONTROL: imported backup cannot conceal extra unchecksummed store", async () => {
+  const idb = createFactory();
+  const fixture = await seedBeta(idb, false);
+  const valid = await captureLegacyBackup({indexedDB:idb,localStorage:settings(fixture)});
+  const malicious = structuredClone(valid);
+  (malicious.snapshot.stores as Record<string, unknown>).futureUnknownStore = [{id:"new-data",secret:"cannot-ignore"}];
+  await assert.rejects(() => validateLegacyBackup(malicious), /unrecognized stores/);
+});
+
+test("NEGATIVE CONTROL: imported backup cannot smuggle credentials in localStorage keys", async () => {
+  const idb = createFactory();
+  const fixture = await seedBeta(idb, false);
+  const valid = await captureLegacyBackup({indexedDB:idb,localStorage:settings(fixture)});
+  const malicious = structuredClone(valid);
+  malicious.snapshot.localSettings["supabase.auth.token"] = "do-not-restore";
+  await assert.rejects(() => validateLegacyBackup(malicious), /unrecognized local settings/);
+  delete malicious.snapshot.localSettings["supabase.auth.token"];
+  (malicious.snapshot.localSettings as Record<string, unknown>).user_settings = { token: "wrong-type" };
+  await assert.rejects(() => validateLegacyBackup(malicious), /unrecognized local settings/);
+});
