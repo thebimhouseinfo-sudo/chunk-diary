@@ -134,7 +134,9 @@ const chunkShape = {
     semanticGroupId: { type: Type.STRING },
     proposedCanonicalMeaning: { type: Type.STRING },
   },
-  required: ["targetText", "meaning", "semanticGroupId", "proposedCanonicalMeaning"],
+  // A brand-new group has no real ID. Requiring one makes the model
+  // invent a foreign key which the validator correctly rejects.
+  required: ["targetText", "meaning", "proposedCanonicalMeaning"],
 };
 const outputShape = {
   type: Type.OBJECT,
@@ -156,6 +158,30 @@ const outputShape = {
   },
   required: ["contractVersion", "semanticUnits"],
 };
+
+/**
+ * Provider SDK errors can include entire prompts or response bodies in the
+ * message. Never expose or log them. This classifier handles metadata ONLY.
+ */
+export function classifyProviderFailure(error: unknown): {
+  publicCode: "PROVIDER_TIMEOUT" | "PROVIDER_UNAVAILABLE";
+  httpStatus: 503 | 504;
+  logCategory: "timeout" | "upstream";
+  upstreamStatus: number | null;
+} {
+  const obj = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const rawStatus = obj.status;
+  const upstreamStatus = typeof rawStatus === "number" &&
+    Number.isSafeInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+    ? rawStatus : null;
+  const timeout = obj.name === "TimeoutError" || obj.name === "AbortError";
+  return {
+    publicCode: timeout ? "PROVIDER_TIMEOUT" : "PROVIDER_UNAVAILABLE",
+    httpStatus: timeout ? 504 : 503,
+    logCategory: timeout ? "timeout" : "upstream",
+    upstreamStatus,
+  };
+}
 
 async function verifiedUser(request: Request): Promise<string | null> {
   const auth = request.headers.get("Authorization");
@@ -242,6 +268,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
   if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
 
+  let modelText: string | undefined;
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
@@ -255,18 +282,34 @@ export async function handleRequest(req: Request): Promise<Response> {
         abortSignal: AbortSignal.timeout(45000),
       },
     });
-    const parsed: unknown = response.text ? JSON.parse(response.text) : null;
-    const result = validateResponse(
+    modelText = response.text;
+  } catch (error) {
+    const reason = classifyProviderFailure(error);
+    // Only numeric status and fixed labels; NEVER log prompt, diary,
+    // model output, provider error.message, tokens or raw stack.
+    console.warn("chunkdiary_ai_upstream_failure", reason.logCategory, reason.upstreamStatus);
+    return failure(reason.httpStatus, reason.publicCode, requestId);
+  }
+  let parsed: unknown;
+  try {
+    parsed = modelText ? JSON.parse(modelText) : null;
+  } catch {
+    console.warn("chunkdiary_ai_output_failure", "json_parse");
+    return failure(502, "INVALID_MODEL_OUTPUT", requestId);
+  }
+  let result: Record<string, unknown>;
+  try {
+    result = validateResponse(
       parsed, input.sourceLanguage, input.targetLanguage,
       input.existingSemanticGroups.map((group) => group.id),
     );
-    return respond(200, {
-      success: true, requestId, contractVersion: "2", promptVersion, result,
-    });
   } catch {
-    // Deliberately no error.message, diary content, raw provider output or prompt.
+    console.warn("chunkdiary_ai_output_failure", "contract_validation");
     return failure(502, "INVALID_MODEL_OUTPUT", requestId);
   }
+  return respond(200, {
+    success: true, requestId, contractVersion: "2", promptVersion, result,
+  });
 }
 
 if (import.meta.main) Deno.serve(handleRequest);
