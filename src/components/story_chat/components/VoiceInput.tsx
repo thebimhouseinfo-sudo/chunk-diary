@@ -2,10 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { AudioLines, Keyboard, Volume2, AlertTriangle } from "lucide-react";
 import { getBrowserInfo } from "../../../utils/browser";
 import { MicStatus } from "../../../hooks/useMicPermission";
+import { voiceLocale } from "../../../utils/tts";
 
 interface VoiceInputProps {
   onTranscriptionStart: () => void;
   onTranscriptionEnd: (text: string) => void;
+  sourceLanguage?: string;
   onSwitchMode: () => void;
   micStatus?: MicStatus;
   onRequestMic?: (isUserGesture: boolean) => Promise<boolean>;
@@ -15,10 +17,12 @@ export default function VoiceInput({
   onTranscriptionStart,
   onTranscriptionEnd,
   onSwitchMode,
+  sourceLanguage = "Vietnamese",
   micStatus = 'idle',
   onRequestMic
 }: VoiceInputProps) {
   const [isRecording, setIsRecording] = useState(false);
+  const [speechUnavailable, setSpeechUnavailable] = useState(false);
   const [amplitude, setAmplitude] = useState<number[]>([10, 10, 10, 10, 10]);
   const [recognitionState, setRecognitionState] = useState<'idle' | 'initializing' | 'listening'>('idle');
   const needsSecureContext = !window.isSecureContext || !navigator.mediaDevices?.getUserMedia;
@@ -75,7 +79,11 @@ export default function VoiceInput({
       recognition.interimResults = false;
       
       const browserInfo = getBrowserInfo();
-      recognition.lang = "vi-VN";
+      try {
+        recognition.lang = voiceLocale(sourceLanguage);
+      } catch {
+        recognition.lang = "vi-VN";
+      }
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
@@ -146,15 +154,14 @@ export default function VoiceInput({
         onTranscriptionEnd("");
       }
     } else {
-      console.log("Speech recognition not supported, using fallback");
-      setTimeout(() => {
-        onTranscriptionEnd("Hôm nay mình dậy hơi muộn.");
-        setIsRecording(false);
-        setRecognitionState('idle');
-        pointerActiveRef.current = false;
-      }, 2000);
+      // Never fabricate spoken diary text when Web Speech is unsupported.
+      setSpeechUnavailable(true);
+      setIsRecording(false);
+      setRecognitionState('idle');
+      pointerActiveRef.current = false;
+      onTranscriptionEnd("");
     }
-  }, [onTranscriptionStart, onTranscriptionEnd, micStatus, onRequestMic]);
+  }, [onTranscriptionStart, onTranscriptionEnd, micStatus, onRequestMic, sourceLanguage]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current && isRecording) {
@@ -182,10 +189,10 @@ export default function VoiceInput({
 
   return (
     <div className="mic-input-container flex flex-col items-center justify-center px-4 bg-slate-50/50 rounded-b-none sm:rounded-b-[2.5rem] border-t border-slate-100 relative shrink-0">
-      {(needsSecureContext || micStatus === 'denied' || micStatus === 'not_found') && (
+      {(speechUnavailable || needsSecureContext || micStatus === 'denied' || micStatus === 'not_found') && (
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-rose-50 border border-rose-200 px-4 py-2 rounded-xl flex items-center gap-2 text-rose-800 shadow-md whitespace-nowrap z-20">
           <AlertTriangle size={16} />
-          <span className="text-xs font-bold">{needsSecureContext ? "Can HTTPS de dung Micro tren iPhone" : "Can quyen Micro de noi"}</span>
+          <span className="text-xs font-bold">{speechUnavailable ? "Trình duyệt không hỗ trợ nhận dạng giọng nói; hãy dùng bàn phím." : needsSecureContext ? "Cần HTTPS để dùng micro" : "Cần quyền micro để nói"}</span>
         </div>
       )}
 
