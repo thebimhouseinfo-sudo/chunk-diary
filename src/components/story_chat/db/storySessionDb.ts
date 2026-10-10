@@ -1,4 +1,8 @@
+import { activeWorkspaceOwner } from "../../../db/workspaceRouter";
+import { openAccountWorkspace } from "../../../db/scopedWorkspace";
 export function openStoryDB(): Promise<IDBDatabase> {
+  const owner = activeWorkspaceOwner();
+  if (owner?.kind === "account") return openAccountWorkspace(owner.userId);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("StoryChatDB", 1);
     request.onupgradeneeded = (event) => {
@@ -14,10 +18,14 @@ export function openStoryDB(): Promise<IDBDatabase> {
 
 import { StorySession } from "../models/types";
 
+function sessionStoreName(): string {
+  return activeWorkspaceOwner()?.kind === "account" ? "storySessions" : "sessions";
+}
+
 export async function getActiveSession(): Promise<StorySession | null> {
   const db = await openStoryDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("sessions", "readonly");
+    const tx = db.transaction(sessionStoreName(), "readonly");
     const store = tx.objectStore("sessions");
     const request = store.get("active"); // Direct single-key retrieval
     request.onsuccess = () => {
@@ -30,7 +38,7 @@ export async function getActiveSession(): Promise<StorySession | null> {
 export async function saveSession(session: StorySession): Promise<void> {
   const db = await openStoryDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("sessions", "readwrite");
+    const tx = db.transaction(sessionStoreName(), "readwrite");
     const store = tx.objectStore("sessions");
     const request = store.put({ ...session, id: "active" }); // Ensure single key "active"
     request.onsuccess = () => resolve();
@@ -41,7 +49,7 @@ export async function saveSession(session: StorySession): Promise<void> {
 export async function clearActiveSession(): Promise<void> {
   const db = await openStoryDB();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction("sessions", "readwrite");
+    const tx = db.transaction(sessionStoreName(), "readwrite");
     const store = tx.objectStore("sessions");
     const request = store.delete("active"); // True deletion of the active session record
     request.onsuccess = () => resolve();
