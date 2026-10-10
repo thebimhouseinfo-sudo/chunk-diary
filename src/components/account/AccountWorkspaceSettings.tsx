@@ -155,10 +155,10 @@ export default function AccountWorkspaceSettings() {
 
   const onSignOut = () => run(async () => {
     if (!supabase) return;
-    // Remove the active workspace pointer BEFORE clearing Auth credentials.
-    chooseLocalWorkspace(localStorage);
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    // Only clear the local account view AFTER Auth has signed out.
+    chooseLocalWorkspace(localStorage);
     window.location.reload();
   });
 
