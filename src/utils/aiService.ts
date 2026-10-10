@@ -35,33 +35,6 @@ export class AIServiceError extends Error {
   }
 }
 
-export function getBrowserFingerprint(): string {
-  const parts = [
-    navigator.userAgent,
-    navigator.language,
-    screen.colorDepth,
-    screen.width + "x" + screen.height,
-    new Date().getTimezoneOffset(),
-    navigator.hardwareConcurrency || "",
-    (navigator as any).deviceMemory || ""
-  ];
-  const rawString = parts.join("|");
-
-  let hash = 0;
-  for (let i = 0; i < rawString.length; i++) {
-    const char = rawString.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-
-  let localId = localStorage.getItem("browser_fingerprint_id");
-  if (!localId) {
-    localId = "FP-" + Math.random().toString(36).substring(2, 11) + "-" + Date.now();
-    localStorage.setItem("browser_fingerprint_id", localId);
-  }
-
-  return `FP-${Math.abs(hash)}-${localId}`;
-}
 
 const configuredEndpoint = import.meta.env.VITE_GENERATE_CHUNKS_ENDPOINT as string | undefined;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -145,9 +118,10 @@ export async function callGenerateChunks(
         },
         body: JSON.stringify({
           action: "generateChunks",
+          contractVersion: "2",
           requestId,
-          fingerprint: getBrowserFingerprint(),
-          userId: session?.user.id,
+          // No client-chosen userId, device fingerprint or provider instructions.
+          // The Edge gateway derives authorization from the verified JWT.
           ...input
         })
       });
