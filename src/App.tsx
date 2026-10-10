@@ -39,7 +39,12 @@ export default function App() {
         }, localStorage);
         // Pre-seed the selected, owner-scoped store only. Local beta stays untouched
         // when an account is selected, and vice versa.
-        await preseedDatabaseIfEmpty();
+        if (activeWorkspaceOwner()?.kind !== "account") {
+          await preseedDatabaseIfEmpty();
+        }
+        // New account workspaces must stay empty until the user either starts
+        // learning or explicitly imports/recovers data. Never seed over a
+        // potentially newer cloud backup.
         // Load voices for SpeechSynthesis
         loadVoices();
         setIsDbReady(true);
