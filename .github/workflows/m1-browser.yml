@@ -1,0 +1,52 @@
+name: M1 Scoped Import and Real Chromium
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'src/db/scopedWorkspace.ts'
+      - 'src/db/legacySnapshot.ts'
+      - 'src/db/legacyCompatibility.ts'
+      - 'tests/scopedWorkspace.test.ts'
+      - 'tests/legacy-snapshot.test.ts'
+      - 'tests/legacy-compat.test.ts'
+      - 'tests/fixtures/beta-v4.fixture.json'
+      - 'tests/browser/m1-harness.html'
+      - 'tests/browser/m1-browser.test.ts'
+      - 'docs/contracts/WORKSPACE_IMPORT_V1.md'
+      - '.github/workflows/m1-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  import-browser-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install lockfile dependencies
+        run: npm ci
+      - name: Install isolated test-only tools
+        run: npm install --no-save --package-lock=false fake-indexeddb@6.2.5 playwright@1.56.1
+      - name: Type check
+        run: npm run lint
+      - name: IndexedDB regression and negative controls
+        run: node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts tests/scopedWorkspace.test.ts
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Same-origin browser data rehearsal
+        run: |
+          npx vite --host 127.0.0.1 --port 4173 --strictPort > /tmp/chunkdiary-vite.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/tests/browser/m1-harness.html >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          M1_TEST_ORIGIN=http://127.0.0.1:4173 node --import tsx --test tests/browser/m1-browser.test.ts
