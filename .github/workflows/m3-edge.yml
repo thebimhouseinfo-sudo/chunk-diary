@@ -1,0 +1,37 @@
+name: M3 Private Edge Gateway Checks
+
+on:
+  push:
+    branches: [codex/supabase-app]
+    paths:
+      - 'supabase/functions/generate-chunks/**'
+      - 'server.ts'
+      - 'src/utils/aiService.ts'
+      - '.github/workflows/m3-edge.yml'
+      - 'docs/contracts/PRIVATE_AI_GATEWAY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check Edge Function types
+        run: deno check supabase/functions/generate-chunks/index.ts
+      - name: Auth and quota fail-closed tests (no secrets)
+        run: deno test --allow-env --allow-net supabase/functions/generate-chunks/index_test.ts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compile legacy Express development server without prompts
+        run: npm run build:server
