@@ -15,6 +15,7 @@ on:
       - 'src/App.tsx'
       - 'src/utils/tts.ts'
       - 'tests/workspace-routing.test.ts'
+      - 'tests/m7-identity-gate.test.ts'
       - 'src/services/supabase/manualBackup.ts'
       - 'src/services/supabase/backupQueue.ts'
       - 'tests/backup-queue.test.ts'
@@ -48,4 +49,4 @@ jobs:
       - name: Production bundle build
         run: npm run build
       - name: Identity-isolation and read/write regression
-        run: node --import tsx --test tests/workspace-routing.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts tests/manual-cloud-backup.test.ts tests/backup-queue.test.ts tests/migration-contract.test.ts
+        run: node --import tsx --test tests/m7-identity-gate.test.ts tests/workspace-routing.test.ts tests/scopedWorkspace.test.ts tests/cloud-consent-guard.test.ts tests/manual-cloud-backup.test.ts tests/backup-queue.test.ts tests/migration-contract.test.ts
