@@ -31,7 +31,7 @@ async function removeRows(client: SupabaseClient, userId: string, id: string) {
   }
 }
 
-test("M4 staging: real anonymous sign-in, 2-owner RLS, disabled Edge and quota isolation",
+test("M6 staging: real anonymous JWTs denied account cloud data; AI quota disabled",
   { timeout: 70000 }, async () => {
     const a = makeClient();
     const b = makeClient();
@@ -50,30 +50,31 @@ test("M4 staging: real anonymous sign-in, 2-owner RLS, disabled Edge and quota i
       const [aa, bb] = newUsers;
       assert.notEqual(aa.uid, bb.uid, "two distinct anonymous Auth identities required");
 
-      for (const item of newUsers) {
-        const { client, uid } = item;
-        const records: Array<{ table: string; entry: Record<string, unknown> }> = [
-          { table: "user_settings", entry: { user_id: uid, settings: { synthetic: true, tag: id } } },
-          { table: "sync_snapshots", entry: { user_id: uid, payload: { synthetic: true, tag: id } } },
-          { table: "user_progress", entry: { user_id: uid, id, payload: { synthetic: true, owner: uid } } },
-          { table: "generated_chunk_corpus", entry: { user_id: uid, id, payload: { synthetic: true, owner: uid } } },
+      // M6 linked-only cloud rule supersedes the old M4 anonymous-owner
+      // fixture. Anonymous JWTs remain eligible only for AI, never backup.
+      for (const { client, uid } of newUsers) {
+        const attempts: Array<{ table: string; entry: Record<string, unknown> }> = [
+          { table: "user_settings", entry: { user_id: uid, settings: { synthetic: true } } },
+          { table: "sync_snapshots", entry: { user_id: uid, payload: { synthetic: true } } },
+          { table: "user_progress", entry: { user_id: uid, id, payload: { synthetic: true } } },
+          { table: "generated_chunk_corpus", entry: { user_id: uid, id, payload: { synthetic: true } } },
         ];
-        for (const { table, entry } of records) {
-          const { error } = await client.from(table).insert(entry);
-          assert.ifError(error);
+        for (const { table, entry } of attempts) {
+          const result = await client.from(table).insert(entry);
+          assert.ok(result.error, table + ": anonymous INSERT must be denied");
+          const rows = await client.from(table).select("user_id");
+          assert.ifError(rows.error);
+          assert.equal(rows.data?.length, 0, table + ": no account data visible to anonymous JWT");
         }
       }
 
-      // Prove account A and B see only one record of each table, and identical
-      // legacy IDs in A/B do not collide.
-      for (const { client, uid } of newUsers) {
-        for (const table of ["user_settings", "sync_snapshots", "user_progress", "generated_chunk_corpus"]) {
-          const { data, error } = await client.from(table).select("user_id");
-          assert.ifError(error);
-          assert.equal(data?.length, 1, table + ": owner must see only one row");
-          assert.equal(data?.[0]?.user_id, uid, table + ": wrong owner leaked");
-        }
-      }
+      const cas = await a.rpc("chunkdiary_snapshot_cas_write",{
+        p_payload: {format:"chunkdiary.account.cloud-backup",version:1,
+          ownerUserId:aa.uid,backup:{checksum:"a".repeat(64)}},
+        p_expected_checksum:null,
+      });
+      assert.equal(cas.data?.allowed, false, "anonymous user cannot create cloud backup");
+      assert.equal(cas.data?.reason, "UNAUTHORIZED");
 
       // A cannot use an authenticated JWT to claim budget, even after sign-in.
       const rpc = await a.rpc("chunkdiary_ai_quota_claim", {
@@ -105,7 +106,7 @@ test("M4 staging: real anonymous sign-in, 2-owner RLS, disabled Edge and quota i
       assert.equal(response.status, 503, "disabled AI must fail closed even with valid JWT");
       const body = await response.json() as { error?: { code?: string } };
       assert.equal(body.error?.code, "CONFIGURATION_ERROR");
-      console.log("STAGING PASS: two anonymous JWTs, 4 RLS tables, quota denied, AI disabled");
+      console.log("STAGING PASS: two anonymous JWTs, account-cloud denied, quota denied, AI disabled");
     } finally {
       const failures: string[] = [];
       for (const item of newUsers) {
