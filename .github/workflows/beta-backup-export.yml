@@ -1,0 +1,25 @@
+name: Beta Backup Export Regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/db/legacyCompatibility.ts'
+      - 'src/db/legacySnapshot.ts'
+      - 'src/components/SettingsView.tsx'
+      - '.github/workflows/beta-backup-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
