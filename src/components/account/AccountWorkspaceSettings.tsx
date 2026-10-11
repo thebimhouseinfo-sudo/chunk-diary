@@ -223,6 +223,12 @@ export default function AccountWorkspaceSettings() {
         Đăng nhập KHÔNG tự tải nhật ký hoặc chia sẻ chunks. Chỉ sao lưu thủ công khi bạn xác nhận; đồng bộ tự động vẫn tắt.
         Dữ liệu beta chỉ chuyển khi bạn xem trước và đồng ý nhập riêng.
       </p>
+      <div className="rounded-xl border border-slate-200 p-4 space-y-2" aria-label="Các loại quyền xử lý dữ liệu">
+        <p className="text-sm font-bold text-slate-800">Quyền dữ liệu tách biệt</p>
+        <p className="text-xs text-slate-600"><strong>AI processing:</strong> chỉ gửi nội dung khi bạn chủ động tạo bài với AI. Không đồng nghĩa lưu bản sao lên cloud.</p>
+        <p className="text-xs text-slate-600"><strong>Backup sync:</strong> chỉ gửi bản sao khi bạn xác nhận nút Sao lưu thủ công bên dưới. Đăng nhập không tự động upload.</p>
+        <p className="text-xs text-slate-600"><strong>Corpus sharing:</strong> đang TẮT; không chia sẻ các chunks vào kho dữ liệu chung. Hiện chưa có thao tác bật chia sẻ.</p>
+      </div>
       {!isSupabaseConfigured && (
         <p className="text-xs text-orange-700">Supabase chưa được cấu hình ở môi trường development.</p>
       )}
