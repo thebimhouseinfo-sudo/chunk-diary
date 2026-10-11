@@ -28,3 +28,15 @@ Use `PASS_RETEST_REQUIRED` for a bounded feature whose automated source/CI tests
 ## Release protection
 
 `main` remains untouched at `a5be5a8c11b34e36396564b5f88fd915d9670af7`. No migration into main, no intermediate beta patch, no production deploy, no mandatory interim beta notice, no automatic cloud upload, no native/offline voice scope. Do not translate PASS_RETEST_REQUIRED into unconditional PASS.
+
+
+## Human-approved targeted beta export exception — 2026-10-11
+
+The user explicitly approved adding a **read-only, manual JSON export** to existing beta `main` for real compatibility tests. This supersedes the previous unconditional no-main-change rule **only for this narrow export feature**; it does not authorize any premature migration, cloud sync, auth, account adoption, deletion, or rollout of the new application to main.
+
+- Old beta Settings: `Tải xuống dữ liệu (Backup)` directly captures the seven IndexedDB v4 stores, optional StoryChatDB v1 sessions, and allowlisted local settings; emits `chunkdiary.beta-v4.snapshot` version 1 JSON, checksum SHA-256.
+- Format implementation on `main` intentionally reuses exactly `legacyCompatibility.ts` and `legacySnapshot.ts` from the dev app, to avoid incompatible serializers.
+- User workflow: export from old beta on its original browser/origin; keep original data; open separate new-app preview; import the JSON file through explicit file preview/import UI; verify counts, IDs, semantic relationships, story sessions and practice statistics; confirm no cross-owner data adoption or upload.
+- Main export is **not** a migration. Release replacement remains M8-only with explicit Human approval.
+- Main source commits: `e08dc815`, `d4c2be9b`, `339610a9`, `b6845525` (CI). The production Vercel deployment and actual browser operation require distinct verification; don't infer deployed from Git commit.
+- Acceptance: old beta export button downloads checksum-valid JSON; new app parses and safely imports into a matching empty scoped workspace only with explicit confirmation; original beta remains unchanged. Track **PASS_RETEST_REQUIRED** until user performs real-data cross-app compatibility validation.
