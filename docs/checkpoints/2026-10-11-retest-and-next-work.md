@@ -52,3 +52,15 @@ The actual final one-time same-origin cutover must automatically discover and lo
 2. AUTOMATIC SAME-ORIGIN UPGRADE: seed a real browser origin with a representative old beta v4 DB and StoryChatDB v1 plus learning localStorage, then serve new app on precisely the SAME origin. Without invoking import/export/login, verify immediate reading of old diaries/chunks/progress/settings/story sessions across reload and practice; verify no destructive schema upgrade, reownership, wipe or upload. M8 release gate requires this test independently of JSON import.
 
 A passed JSON import is not evidence of passed automatic same-origin local loading. Failure of either gate blocks final replacement of production. Production beta export remains an optional testing/backup utility only.
+
+## Test 2 revised — user's exported data seeded into OLD beta, then app source swapped at SAME origin
+
+Human test plan (2026-10-11):
+- Once a former user's consensually supplied JSON is available, **seed/import its snapshot into an isolated browser's OLD beta origin** (not their real production profile). The legacy beta has an **Export-only** Settings interface; any import must therefore be done by a test-only seeder that validates the backup and populates legacy v4 stores, StoryChat v1 and allowlisted settings. Never add a destructive import UI to beta production just for the test.
+- Start old beta app using the controlled origin `http://127.0.0.1:4191`, load seeded data, and verify baseline content and statistics.
+- Stop old app server, replace it with the new app server on precisely `http://127.0.0.1:4191` while preserving the same browser context/profile. Reload and check **automatic guest/local data presentation** WITHOUT triggering import, restore, sign-in, or backup.
+- Compare displayed diary list, progress values, chunk details, StoryChat sessions, settings, IDs and untouched legacy store counts before/after. Exercise one normal learn/practice action, reload, ensure data and progress still coherent. No automatic cloud upload or account takeover.
+- Treat mere IndexedDB persistence in DevTools as insufficient: the **new app itself must render/use the legacy data**.
+- If no real user JSON exists yet, run the exact same browser cutover with the synthetic v4 fixture and mark `PASS_RETEST_REQUIRED` for the eventual user-supplied case. The real-data test cannot honestly be marked PASS until that file is provided and run privately.
+- Opening the public preview URL in the same browser as production does NOT satisfy this test, because it has a different origin. A synthetic same-origin local test is valid prior to the final production cutover.
+- Existing `tests/browser/m1-browser.test.ts` has a same-origin source swap, but its current assertions primarily prove persistent storage and basic app startup; extend the test to cover **actual application reads, UI rendering and continued practice** before marking full automatic-load compatibility PASS.
