@@ -1,5 +1,6 @@
 import { getSettings, saveSettings } from "../db/userDb";
 import React, { useState, useEffect } from "react";
+import { captureLegacyBackup, validateLegacyBackup } from "../db/legacySnapshot";
 import {
   User,
   Download,
@@ -30,6 +31,7 @@ export default function SettingsView() {
   const [learningLanguageText, setLearningLanguageText] = useState("English");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [placeholderMessage, setPlaceholderMessage] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("user_settings");
@@ -61,6 +63,28 @@ export default function SettingsView() {
     localStorage.setItem("user_settings", JSON.stringify(updated));
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  const handleExport = async () => {
+    setExportBusy(true);
+    setPlaceholderMessage(null);
+    try {
+      const backup = await validateLegacyBackup(await captureLegacyBackup());
+      const file = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `chunkdiary-beta-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      setPlaceholderMessage("Đã tạo file sao lưu JSON trên thiết bị. Hãy lưu file này an toàn; không có dữ liệu nào được gửi lên server.");
+    } catch (error) {
+      setPlaceholderMessage("Không thể xuất dữ liệu: " + (error instanceof Error ? error.message : "Lỗi không xác định") + ". Dữ liệu gốc không bị thay đổi.");
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   const handlePlaceholderClick = (action: string) => {
@@ -291,10 +315,12 @@ export default function SettingsView() {
 
             <div className="space-y-3">
               <button
-                onClick={() => handlePlaceholderClick("download")}
+                type="button"
+                disabled={exportBusy}
+                onClick={handleExport}
                 className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-slate-700 bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer"
               >
-                <Download size={18} /> Tải xuống dữ liệu (Backup)
+                <Download size={18} /> {exportBusy ? "Đang tạo bản sao..." : "Tải xuống dữ liệu (Backup)"}
               </button>
               <button
                 onClick={() => handlePlaceholderClick("upload")}
