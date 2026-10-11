@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isVerifiedAccountOwner } from "./identityGate";
 import { isSupabaseConfigured, supabase, ensureGuestSession } from "../../services/supabase/client";
 import { captureLegacyBackup } from "../../db/legacySnapshot";
 import { importIntoScopedWorkspace, previewScopedImport } from "../../db/scopedWorkspace";
@@ -29,7 +30,7 @@ export default function AccountWorkspaceSettings() {
   const [status, setStatus] = useState("Chưa kiểm tra phiên đăng nhập.");
   const owner = activeWorkspaceOwner();
   const ownerId = owner?.kind === "account" ? owner.userId : null;
-  const ownerVerified = Boolean(ownerId && identityCheck === "verified" && identity && !identity.isAnonymous && identity.id.toLowerCase() === ownerId.toLowerCase());
+  const ownerVerified = isVerifiedAccountOwner(ownerId, identity, identityCheck);
   useEffect(() => {
     if (!ownerId) return;
     let alive = true;
