@@ -19,6 +19,7 @@ import {
 export default function AccountWorkspaceSettings() {
   const [email, setEmail] = useState("");
   const [identity, setIdentity] = useState<VerifiedWorkspaceUser | null>(null);
+  const [identityCheck, setIdentityCheck] = useState<"checking" | "verified" | "unverified">("checking");
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState<BackupQueueJob | null>(null);
   const [cloudPreview, setCloudPreview] = useState<Awaited<ReturnType<typeof inspectManualCloudBackup>> | null>(null);
@@ -28,6 +29,7 @@ export default function AccountWorkspaceSettings() {
   const [status, setStatus] = useState("Chưa kiểm tra phiên đăng nhập.");
   const owner = activeWorkspaceOwner();
   const ownerId = owner?.kind === "account" ? owner.userId : null;
+  const ownerVerified = Boolean(ownerId && identityCheck === "verified" && identity && !identity.isAnonymous && identity.id.toLowerCase() === ownerId.toLowerCase());
   useEffect(() => {
     if (!ownerId) return;
     let alive = true;
@@ -47,11 +49,12 @@ export default function AccountWorkspaceSettings() {
     void verify().then((result) => {
       if (!current) return;
       setIdentity(result);
+      setIdentityCheck(result ? "verified" : "unverified");
       setStatus(result
         ? (result.isAnonymous ? "Phiên ẩn danh chỉ dành cho AI, không đảm bảo phục hồi liên thiết bị."
           : "Đã xác minh tài khoản. Chỉ khi chọn, ứng dụng mới mở workspace của tài khoản này.")
         : "Đang học bằng dữ liệu local; chưa có tài khoản liên kết.");
-    }).catch(() => { if (current) setStatus("Không thể kiểm tra Auth; giữ chế độ Local an toàn."); });
+    }).catch(() => { if (current) { setIdentityCheck("unverified"); setStatus("Không thể kiểm tra Auth; thao tác cloud bị khoá. Có thể quay về Local an toàn."); } });
     return () => { current = false; };
   }, []);
 
@@ -67,6 +70,7 @@ export default function AccountWorkspaceSettings() {
     const session = await ensureGuestSession();
     if (!session) throw new Error("Chưa cấu hình Supabase");
     setIdentity({ id: session.user.id, isAnonymous: true });
+    setIdentityCheck("verified");
     setStatus("Đã tạo phiên AI ẩn danh; dữ liệu học local chưa được upload.");
   });
 
@@ -116,7 +120,7 @@ export default function AccountWorkspaceSettings() {
   };
 
   const onPreviewLegacy = () => run(async () => {
-    if (owner?.kind !== "account") return;
+    if (!ownerVerified || owner?.kind !== "account") throw new Error("Cần xác minh lại tài khoản trước khi truy cập dữ liệu.");
     const backup = await captureLegacyBackup();
     const preview = await previewScopedImport(backup, owner);
     setBetaPreview({ backup, count: preview.recordCount, canImport: preview.canImport });
@@ -126,7 +130,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onAdoptLocal = () => run(async () => {
-    if (owner?.kind !== "account" || !betaPreview?.canImport) return;
+    if (!ownerVerified || owner?.kind !== "account" || !betaPreview?.canImport) throw new Error("Cần xác minh lại tài khoản trước khi nhập dữ liệu.");
     if (!window.confirm(
       "Chỉ SAO CHÉP dữ liệu Local beta vào tài khoản đang mở? Dữ liệu beta KHÔNG bị xóa " +
       "và KHÔNG tự động tải lên Supabase. Đồng ý?"
@@ -137,7 +141,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onBackup = () => run(async () => {
-    if (!supabase || owner?.kind !== "account") return;
+    if (!supabase || !ownerVerified || owner?.kind !== "account") throw new Error("Tài khoản chưa được xác minh để sao lưu.");
     const previous = cloudPreview?.receipt.checksum ?? null;
     if (!window.confirm(previous
       ? "THAY THẾ bản backup cloud vừa xem trước? Chỉ ghi nếu checksum hiện tại vẫn khớp; " +
@@ -160,7 +164,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onRetryQueuedBackup = () => run(async () => {
-    if (!supabase || owner?.kind !== "account") return;
+    if (!supabase || !ownerVerified || owner?.kind !== "account") throw new Error("Tài khoản chưa được xác minh để gửi lại bản sao.");
     const outcome = await sendQueuedBackup(supabase, owner.userId);
     setQueued(await inspectBackupQueue(owner.userId));
     if (outcome.status === "synced") setCloudPreview(null);
@@ -171,7 +175,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onDiscardQueue = () => run(async () => {
-    if (owner?.kind !== "account") return;
+    if (!ownerVerified || owner?.kind !== "account") throw new Error("Cần xác minh tài khoản trước khi xoá hàng đợi.");
     if (!window.confirm("XÓA bản sao chưa gửi đang chờ trên thiết bị? " +
       "Nhật ký và chunks trong workspace KHÔNG bị xóa.")) return;
     await discardQueuedBackup(owner.userId, { confirmed: true });
@@ -180,7 +184,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onPreviewCloud = () => run(async () => {
-    if (!supabase || owner?.kind !== "account") return;
+    if (!supabase || !ownerVerified || owner?.kind !== "account") throw new Error("Tài khoản chưa được xác minh để xem bản sao.");
     const result = await inspectManualCloudBackup(supabase, owner.userId);
     setCloudPreview(result);
     setStatus("Cloud backup hợp lệ: " + result.receipt.recordCount + " bản ghi. " +
@@ -189,7 +193,7 @@ export default function AccountWorkspaceSettings() {
   });
 
   const onRestoreCloud = () => run(async () => {
-    if (!supabase || owner?.kind !== "account" || !cloudPreview?.preview.canImport) return;
+    if (!supabase || !ownerVerified || owner?.kind !== "account" || !cloudPreview?.preview.canImport) throw new Error("Cần xác minh tài khoản và xem trước bản sao trước khi phục hồi.");
     if (!window.confirm(
       "Phục hồi bản sao cloud đã xem trước vào workspace TRỐNG này? " +
       "Không thay đổi dữ liệu Local beta. Xác nhận?"
@@ -222,6 +226,11 @@ export default function AccountWorkspaceSettings() {
         <p className="text-xs text-orange-700">Supabase chưa được cấu hình ở môi trường development.</p>
       )}
       <p role="status" className="text-xs text-slate-600">{status}</p>
+      {owner?.kind === "account" && !ownerVerified && (
+        <p role="alert" className="rounded-xl border border-orange-200 p-3 text-xs text-orange-800">
+          {identityCheck === "checking" ? "Đang xác minh quyền sở hữu workspace; các thao tác cloud tạm khoá." : "Chưa xác minh được tài khoản sở hữu workspace này. Thao tác dữ liệu đã bị khoá; chọn Local để tiếp tục an toàn."}
+        </p>
+      )}
       {isSupabaseConfigured && (
         <div className="space-y-3">
           {!identity && (
@@ -259,7 +268,7 @@ export default function AccountWorkspaceSettings() {
               Trở về dữ liệu Local beta (không xóa workspace)
             </button>
           )}
-          {owner?.kind === "account" && (
+          {owner?.kind === "account" && ownerVerified && (
             <div className="space-y-2 rounded-xl border border-slate-100 p-4">
               <p className="text-xs font-bold text-slate-700">Chuyển dữ liệu có xác nhận</p>
               <button type="button" disabled={busy} onClick={onPreviewLegacy}
