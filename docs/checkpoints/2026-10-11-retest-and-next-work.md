@@ -40,3 +40,15 @@ The user explicitly approved adding a **read-only, manual JSON export** to exist
 - Main export is **not** a migration. Release replacement remains M8-only with explicit Human approval.
 - Main source commits: `e08dc815`, `d4c2be9b`, `339610a9`, `b6845525` (CI). The production Vercel deployment and actual browser operation require distinct verification; don't infer deployed from Git commit.
 - Acceptance: old beta export button downloads checksum-valid JSON; new app parses and safely imports into a matching empty scoped workspace only with explicit confirmation; original beta remains unchanged. Track **PASS_RETEST_REQUIRED** until user performs real-data cross-app compatibility validation.
+
+## Clarification — real-user export is test fixture ONLY (2026-10-11)
+
+The Human clarified: Existing users download JSON from the CURRENT production beta and provide it privately to the developer solely as a real-data fixture for testing the NEW beta/preview app's import compatibility. **This is not the end-user migration procedure.** Do not require old users to download, upload, sign in, import, restore or consent to cloud transfer when the new app replaces the old app.
+
+The actual final one-time same-origin cutover must automatically discover and load the existing `LanguageChunkDiaryDB` v4, `StoryChatDB` v1 and relevant localStorage learning settings on the user's existing browser/device, preserving IDs, relations, review statistics and sessions, without an import button or user intervention. New app must offer the same original data and progress immediately under Local/guest mode. Keep a non-destructive backward-compatible read path and prohibit automatic account adoption, cloud upload and database deletion.
+
+**Two separate test gates:**
+1. REAL-DATA OFFLINE FIXTURE: consented JSON from existing user -> isolated new-app preview import -> compare all counts/IDs/checksum/practice statistics/StoryChat with original; never publish private user data into GitHub or test artifacts.
+2. AUTOMATIC SAME-ORIGIN UPGRADE: seed a real browser origin with a representative old beta v4 DB and StoryChatDB v1 plus learning localStorage, then serve new app on precisely the SAME origin. Without invoking import/export/login, verify immediate reading of old diaries/chunks/progress/settings/story sessions across reload and practice; verify no destructive schema upgrade, reownership, wipe or upload. M8 release gate requires this test independently of JSON import.
+
+A passed JSON import is not evidence of passed automatic same-origin local loading. Failure of either gate blocks final replacement of production. Production beta export remains an optional testing/backup utility only.
