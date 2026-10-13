@@ -13,7 +13,7 @@ import {
 } from "../../services/supabase/backupQueue";
 import type { LegacyBackup } from "../../db/legacySnapshot";
 import {
-  activeWorkspaceOwner, chooseAccountWorkspace, chooseLocalWorkspace,
+  activeWorkspaceOwner, chooseAccountWorkspace, chooseGuestWorkspace, chooseLocalWorkspace,
   type VerifiedWorkspaceUser,
 } from "../../db/workspaceRouter";
 
@@ -70,9 +70,11 @@ export default function AccountWorkspaceSettings() {
   const onAnonymous = () => run(async () => {
     const session = await ensureGuestSession();
     if (!session) throw new Error("Chưa cấu hình Supabase");
-    setIdentity({ id: session.user.id, isAnonymous: true });
+    setIdentity({ id: session.user.id, isAnonymous: Boolean(session.user.is_anonymous) });
     setIdentityCheck("verified");
-    setStatus("Đã tạo phiên AI ẩn danh; dữ liệu học local chưa được upload.");
+    setStatus(session.user.is_anonymous
+      ? "Guest Auth đã xác minh. Có thể chọn workspace Guest riêng; dữ liệu Local beta không bị thay đổi."
+      : "Đã có phiên đăng nhập liên kết. Không tạo Guest mới hoặc tự nhận dữ liệu Local beta.");
   });
 
   const onGoogle = () => run(async () => {
@@ -102,6 +104,16 @@ export default function AccountWorkspaceSettings() {
       if (error) throw error;
     }
     setStatus("Vui lòng xác nhận liên kết đăng nhập đã gửi tới email.");
+  });
+
+  const onGuestWorkspace = () => run(async () => {
+    const fresh = await verify();
+    if (!fresh?.isAnonymous) throw new Error("Cần phiên Guest ẩn danh đã xác minh.");
+    if (!window.confirm(
+      "Dùng workspace Guest riêng theo tài khoản Supabase hiện tại? Dữ liệu Local beta sẽ KHÔNG bị chuyển, xóa hoặc tự upload. Đồng ý?"
+    )) return;
+    await chooseGuestWorkspace(fresh.id, verify, localStorage);
+    window.location.reload();
   });
 
   const onAccount = () => run(async () => {
@@ -262,6 +274,12 @@ export default function AccountWorkspaceSettings() {
                 </button>
               </div>
             </>
+          )}
+          {identity?.isAnonymous && owner?.userId !== identity.id && (
+            <button type="button" disabled={busy} onClick={onGuestWorkspace}
+              className="w-full rounded-xl bg-vibrant-indigo text-white p-3 text-sm font-bold disabled:opacity-50">
+              Dùng workspace Guest riêng (chưa đồng bộ cloud)
+            </button>
           )}
           {identity && !identity.isAnonymous && owner?.kind !== "account" && (
             <button type="button" disabled={busy} onClick={onAccount}
