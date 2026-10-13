@@ -63,7 +63,7 @@ begin
     return pg_catalog.jsonb_build_object('allowed',false,'reason','AUTH_REQUIRED');
   end if;
   begin
-    v_session := pg_catalog.nullif(auth.jwt()->>'session_id','')::uuid;
+    v_session := nullif(auth.jwt()->>'session_id','')::uuid;
   exception when others then
     return pg_catalog.jsonb_build_object('allowed',false,'reason','INVALID_SESSION');
   end;
@@ -124,9 +124,16 @@ declare
 begin
   if v_user is null
      or auth.role() <> 'authenticated'
-     or coalesce((auth.jwt()->>'is_anonymous')::boolean,false) = true
-     or not chunkdiary_private.lease_is_active() then
+     or coalesce((auth.jwt()->>'is_anonymous')::boolean,false) = true then
     return pg_catalog.jsonb_build_object('allowed',false,'reason','UNAUTHORIZED');
+  end if;
+  -- Match the acquire/takeover lock, so a previously verified writer cannot
+  -- commit after a new learning session has taken over this user's lease.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('chunkdiary.active_lease:' || v_user::text, 0)
+  );
+  if not chunkdiary_private.lease_is_active() then
+    return pg_catalog.jsonb_build_object('allowed',false,'reason','SESSION_CONFLICT');
   end if;
   if p_payload is null
      or p_payload->>'format' <> 'chunkdiary.account.cloud-backup'
