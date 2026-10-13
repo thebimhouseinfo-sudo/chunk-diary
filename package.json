@@ -14,7 +14,7 @@
     "lint": "tsc --noEmit",
     "test:legacy": "node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts",
     "test:snapshot": "node --import tsx --test tests/legacy-snapshot.test.ts",
-    "test:m6-guest": "node --import tsx --test tests/m6-guest-router.test.ts"
+    "test:m6-guest": "node --import tsx --test tests/m6-guest-router.test.ts tests/m6-legacy-presence.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
