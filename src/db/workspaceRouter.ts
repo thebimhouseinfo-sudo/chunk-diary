@@ -9,6 +9,7 @@
 import { workspaceDatabaseName, type WorkspaceOwner } from "./scopedWorkspace";
 
 const PREF_KEY = "chunkdiary.activeWorkspaceAccount.v1";
+const GUEST_PREF_KEY = "chunkdiary.activeWorkspaceGuest.v1";
 let activeAccount: string | null = null;
 
 export interface VerifiedWorkspaceUser {
@@ -44,14 +45,18 @@ export async function initializeWorkspaceRouting(
   storage: Pick<Storage, "getItem">,
 ): Promise<WorkspaceOwner | null> {
   activeAccount = null; // fail closed while session verification is pending
-  const chosen = storage.getItem(PREF_KEY);
+  const chosenAccount = storage.getItem(PREF_KEY);
+  const chosenGuest = storage.getItem(GUEST_PREF_KEY);
+  const chosen = chosenAccount || chosenGuest;
   if (!chosen) return null;
   let canonical: string;
   try { canonical = normalize(chosen); }
   catch { return null; }
   try {
     const user = await verifyUser();
-    if (!user || user.isAnonymous || normalize(user.id) !== canonical) return null;
+    // A Guest that linked Google/Apple retains its original User ID and local
+    // workspace. A registered-account selection never silently becomes Guest.
+    if (!user || (chosenAccount && user.isAnonymous) || normalize(user.id) !== canonical) return null;
     activeAccount = canonical;
     return { kind: "account", userId: canonical };
   } catch {
@@ -80,18 +85,37 @@ export async function chooseAccountWorkspace(
   return { kind: "account", userId: canonical };
 }
 
+export async function chooseGuestWorkspace(
+  userId: string,
+  verifyUser: VerifyWorkspaceUser,
+  storage: Pick<Storage, "setItem" | "removeItem">,
+): Promise<WorkspaceOwner> {
+  const canonical = normalize(userId);
+  const verified = await verifyUser();
+  if (!verified || !verified.isAnonymous || normalize(verified.id) !== canonical) {
+    throw new Error("Guest ownership could not be verified");
+  }
+  // Guest shares UUID-scoped account storage, never the generic guest/beta DB.
+  storage.removeItem(PREF_KEY);
+  storage.setItem(GUEST_PREF_KEY, canonical);
+  activeAccount = canonical;
+  return { kind: "account", userId: canonical };
+}
+
 export function chooseLocalWorkspace(storage: Pick<Storage, "removeItem">): void {
   activeAccount = null;
   storage.removeItem(PREF_KEY);
+  storage.removeItem(GUEST_PREF_KEY);
 }
 
 export function selectedWorkspaceUser(storage: Pick<Storage, "getItem">): string | null {
-  const value = storage.getItem(PREF_KEY);
+  const value = storage.getItem(PREF_KEY) || storage.getItem(GUEST_PREF_KEY);
   if (!value) return null;
   try { return normalize(value); } catch { return null; }
 }
 
 export const ACTIVE_WORKSPACE_KEY = PREF_KEY;
+export const ACTIVE_GUEST_WORKSPACE_KEY = GUEST_PREF_KEY;
 
 /** Remembered linked account could not be verified. The app must display
  * an explicit owner choice rather than silently opening beta Local data.
