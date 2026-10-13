@@ -23,12 +23,12 @@ Guest starts without registering, consents to owned cloud backup, can link Googl
 
 ### M6-B1 — Guest foundation and sync-read preparation (maps M6-N2 and M6-N3 read-only groundwork; depends M6-A)
 - Create/resume anonymous Supabase Auth on permitted online startup. Offline first-run still has safe local practice/data; never silently adopt another identity's records. Make guest workspace owner-bound and persistent across reload.
-- Separate consent for cloud BACKUP_SYNC, AI_PROCESSING, optional CORPUS_SHARE (default OFF); no automatic upload of existing unclaimed beta records. Newly consented content syncs identity-scoped full snapshots via existing CAS/retry queue.
+- Separate consent for cloud BACKUP_SYNC, AI_PROCESSING, optional CORPUS_SHARE (default OFF); no automatic upload of existing unclaimed beta records. Newly consented changes remain in the local identity-scoped persistent queue until M6-B2 enables lease-guarded full snapshot sync with existing CAS/retry mechanisms.
 - Audit/prepare anonymous-user owner-scoped backup read and consent contracts; do NOT enable Guest cloud writes or automatic sync before M6-C lease enforcement. Do not expose service-role credentials or weaken linked-user RLS.
 - Negative tests: cross-Guest reads/writes, identical logical IDs in two accounts, unauthenticated clients, old JWT, revoked device, no consent, canceled backup, offline retries, checksum mismatch, conflicting newer data, StoryChat/stats restoration.
 - Gate B1: Guest Auth, local workspace, consent and owner-safe read/restore interfaces verified with mocked or controlled backend; **Guest automatic cloud writes remain disabled** until M6-C and M6-B2.
 
-### M6-C — Single online learning lease (maps M6-N6; prerequisite to Guest transfer)
+### M6-C — Single online learning lease (maps M6-N6; depends M6-B1; prerequisite to Guest cloud writes and transfer)
 - One server-authoritative record per cloud user: device/session identifier, monotonic generation, expiry and server-time lease; acquire/revalidate/explicit takeover with atomic CAS. Different browser tabs belonging to same physical device must have a documented stable identity and safe refresh semantics.
 - Server must validate lease + generation + ownership on **every** cloud mutation/RPC, auto-backup write and AI generation call; forbid any direct Supabase table path that bypasses lease enforcement. Check generation before starting costly AI and again before accepting/storing its result; cancellation/refund semantics for mid-flight takeover must be documented truthfully. Owner RLS remains required separately.
 - Specify bounded heartbeat, expiry and renewal, sleeping tab, long network pause, token refresh, server outage, concurrent takeover and lost response. Lease expiry is not a guarantee that an offline browser is inactive locally.
