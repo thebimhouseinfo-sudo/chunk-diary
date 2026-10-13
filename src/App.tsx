@@ -38,7 +38,7 @@ export default function App() {
           const { data, error } = await supabase.auth.getUser();
           if (error || !data.user) return null;
           return { id: data.user.id, isAnonymous: Boolean(data.user.is_anonymous) };
-        }, localStorage);
+        }, localStorage, { offlineLocalAccess: navigator.onLine === false });
         // Only a genuinely fresh browser origin may auto-enter the new Guest
         // workspace. Existing beta IndexedDB must remain visible, untouched,
         // unclaimed and never uploaded by a newly created Anonymous account.
