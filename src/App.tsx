@@ -9,7 +9,7 @@ import { preseedDatabaseIfEmpty } from "./db/indexedDb";
 import { loadVoices } from "./utils/tts";
 import { Chunk } from "./types";
 import { supabase } from "./services/supabase/client";
-import { ACTIVE_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting, requiresExplicitLocalChoice, resetWorkspaceRuntime } from "./db/workspaceRouter";
+import { ACTIVE_WORKSPACE_KEY, ACTIVE_GUEST_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting, requiresExplicitLocalChoice, resetWorkspaceRuntime } from "./db/workspaceRouter";
 
 // Views
 import HomeView from "./components/HomeView";
@@ -67,7 +67,7 @@ export default function App() {
     // Other tabs may sign out / switch accounts. Never retain old owner data
     // on screen after identity changes. Force re-verification on a new boot.
     const onStorage = (event: StorageEvent) => {
-      if (event.key === ACTIVE_WORKSPACE_KEY) window.location.reload();
+      if (event.key === ACTIVE_WORKSPACE_KEY || event.key === ACTIVE_GUEST_WORKSPACE_KEY) window.location.reload();
     };
     window.addEventListener("storage", onStorage);
     const { data: authSubscription } = supabase?.auth.onAuthStateChange((event, session) => {
