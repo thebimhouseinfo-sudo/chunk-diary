@@ -25,6 +25,22 @@ test("M7 preview: real legacy fixture imports to EMPTY Local and refuses repeat 
     checksum: await fingerprintLegacySnapshot(snapshot),
     counts: report.counts, storySessionCount: report.storySessionCount,
   };
+  // Simulate first-run onboarding preferences that must not block a real backup.
+  localStorage.setItem("user_settings", JSON.stringify({ nickname: "Preview default", onboarded: true }));
+  const existing = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open("LanguageChunkDiaryDB", 4);
+    req.onupgradeneeded = () => {
+      for (const name of Object.keys(snapshot.stores)) req.result.createObjectStore(name, { keyPath: name === "settings" ? "key" : "id" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = existing.transaction("settings", "readwrite");
+    tx.objectStore("settings").put({ key: "onboarding", value: "default" });
+    tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+  });
+  existing.close();
   const before = await previewLocalImport(backup);
   assert.equal(before.canImport,true);
   await assert.rejects(
@@ -34,6 +50,7 @@ test("M7 preview: real legacy fixture imports to EMPTY Local and refuses repeat 
   await importPreviewLocalBackup(backup,{confirmed:true});
   assert.equal((await getDiaries()).length, report.counts.diaries);
   assert.equal((await getChunks()).length, report.counts.chunks);
+  assert.equal(localStorage.getItem("user_settings"), snapshot.localSettings.user_settings);
   const after = await previewLocalImport(backup);
   assert.equal(after.canImport,false);
   await assert.rejects(importPreviewLocalBackup(backup,{confirmed:true}),/refusing to overwrite/);
