@@ -106,8 +106,10 @@ export async function previewLocalImport(input: unknown): Promise<LocalImportPre
     // only hard blocker; replacing preferences requires explicit import consent.
     const learningStores = LEGACY_STORES.filter(name => name !== "settings");
     const currentRecords = await countStores(db, learningStores) + await countStores(story, ["sessions"]);
+    const currentRows = await readStores(db, LEGACY_STORES);
+    const storyRecords = await countStores(story, ["sessions"]);
     return {
-      canImport: currentRecords === 0,
+      canImport: (currentRecords === 0 || isPristineWelcome(currentRows) && storyRecords === 0),
       currentRecords,
       importRecords: LEGACY_STORES.reduce((sum, name) => sum + backup.counts[name], backup.storySessionCount),
     };
