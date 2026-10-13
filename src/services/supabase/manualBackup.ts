@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { acquireLearningLease } from "./learningLease";
 import {
   captureAccountWorkspaceBackup, importIntoScopedWorkspace, previewScopedImport,
   type ImportPreview,
@@ -79,6 +80,9 @@ export async function uploadManualCloudBackup(
     throw new Error("Backup exceeds 5 MiB. Use local JSON export until chunked sync is available.");
   }
   await verifyLinkedOwner(client, ownerUserId);
+  // Existing linked-account manual backups also obey the one-online-writer rule.
+  // The database rechecks this independently at the CAS write boundary.
+  await acquireLearningLease(client);
   // Database-enforced compare-and-swap; client cannot bypass via direct table
   // INSERT/UPDATE (permissions revoked). UUID comes from verified Auth only.
   // Null expectation means create ONLY IF ABSENT, never overwrite a newer
