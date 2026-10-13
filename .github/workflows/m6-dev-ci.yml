@@ -1,0 +1,35 @@
+name: ChunkDiary M6 Development Checks
+
+on:
+  push:
+    branches:
+      - codex/supabase-app
+  pull_request:
+    branches:
+      - codex/supabase-app
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, build and M6 negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Guest identity negative controls
+        run: npm run test:m6-guest
+      - name: Legacy safety regressions
+        run: npm run test:legacy
+      - name: Build
+        run: npm run build
