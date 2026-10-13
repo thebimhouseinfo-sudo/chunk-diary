@@ -93,3 +93,9 @@ Demonstrate complete new Web app functionality with safe cloud/local continuity,
 - Required review evidence per finding: ID, severity, exact clause, observed contradiction/risk, bounded correction, test/acceptance mapping, outcome. Mark feasibility unknown rather than inventing a PASS.
 - Traceability: M6-A→N1; M6-B→N2/N3; M6-C→N6; M6-D→N4; M6-E→N5; M6-F→CP6; M7-A..D→N1..N5; M8-A..C→N1..N5. No replaced legacy task silently reactivated.
 - Reviewer gate: documentation consistency can PASS while implementation feasibility, provider-device tests, RLS and real lease/recovery still await execution. CR invocation is independent from Planner self-review.
+
+## Planner → Reviewer loop record (2026-10-13)
+
+- **Iteration 1 — CHANGES REQUIRED (planning completeness):** checked against controlling roadmap M6-N1..N6, M7-N1..N5, M8-N1..N5. Keep offline practice and local progress explicit, not cloud-write permission; separately gate online API generation and server lease. Differentiate recovery B as independent account copy, not an identity merge.
+- **Iteration 2 — PASS (document consistency):** every M6/M7/M8 step has phase GOAL, prerequisites, owner/security contract, concrete gate or trace to CP6–CP8. Negative tests include code replay, snapshot failure, stale device writes and offline progress conflicts. Source repo changes were limited to docs on development branch; main and production untouched.
+- **Limits:** This is Planner/self-review evidence only, not an independently persisted GSA Reviewer or CR Verification, and not successful execution, CI, Supabase session-feasibility test, provider-device sign-in or release approval. The implementation review gate remains open until actual evidence is available.
