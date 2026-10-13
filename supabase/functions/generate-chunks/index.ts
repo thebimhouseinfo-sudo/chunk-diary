@@ -214,7 +214,7 @@ async function checkLearningLease(req: Request): Promise<"active" | "inactive" |
   const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
   if (!auth?.startsWith("Bearer ") || !url || !key) return "unavailable";
   try {
-    const response = await fetch(url.replace(/\\/$/, "") + "/rest/v1/rpc/chunkdiary_lease_check", {
+    const response = await fetch((url.endsWith("/") ? url.slice(0, -1) : url) + "/rest/v1/rpc/chunkdiary_lease_check", {
       method: "POST",
       headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" },
       body: "{}",
