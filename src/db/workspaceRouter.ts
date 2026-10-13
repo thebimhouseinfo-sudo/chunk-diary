@@ -43,6 +43,7 @@ export function resetWorkspaceRuntime(): void {
 export async function initializeWorkspaceRouting(
   verifyUser: VerifyWorkspaceUser,
   storage: Pick<Storage, "getItem">,
+  options: { offlineLocalAccess?: boolean } = {},
 ): Promise<WorkspaceOwner | null> {
   activeAccount = null; // fail closed while session verification is pending
   const chosenAccount = storage.getItem(PREF_KEY);
@@ -56,12 +57,23 @@ export async function initializeWorkspaceRouting(
     const user = await verifyUser();
     // A Guest that linked Google/Apple retains its original User ID and local
     // workspace. A registered-account selection never silently becomes Guest.
-    if (!user || (chosenAccount && user.isAnonymous) || normalize(user.id) !== canonical) return null;
+    if (!user || (chosenAccount && user.isAnonymous) || normalize(user.id) !== canonical) {
+      // Offline access is strictly local: cloud RPCs must verify fresh Auth and lease.
+      if (options.offlineLocalAccess) {
+        activeAccount = canonical;
+        return { kind: "account", userId: canonical };
+      }
+      return null;
+    }
     activeAccount = canonical;
     return { kind: "account", userId: canonical };
   } catch {
-    // Offline/expired Auth => do not display cached account data as beta data.
-    // The app stays in explicit local mode until the session can be verified.
+    // Offline mode may reopen only the previously selected local workspace.
+    // Cloud API calls still require fresh server verification and active lease.
+    if (options.offlineLocalAccess) {
+      activeAccount = canonical;
+      return { kind: "account", userId: canonical };
+    }
     return null;
   }
 }
