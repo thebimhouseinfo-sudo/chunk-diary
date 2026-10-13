@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { isVerifiedAccountOwner } from "./identityGate";
+import { acquireLearningLease, LearningLeaseError } from "../../services/supabase/learningLease";
 import { isSupabaseConfigured, supabase, ensureGuestSession } from "../../services/supabase/client";
 import { captureLegacyBackup } from "../../db/legacySnapshot";
 import { importIntoScopedWorkspace, previewScopedImport } from "../../db/scopedWorkspace";
@@ -66,6 +67,38 @@ export default function AccountWorkspaceSettings() {
       setStatus(error instanceof Error ? error.message : "Thao tác tài khoản thất bại.");
     } finally { setBusy(false); }
   };
+
+  const onTakeoverLearning = () => run(async () => {
+    if (!supabase) throw new Error("Supabase chưa được cấu hình.");
+    const fresh = await verify();
+    if (!fresh || !ownerId || fresh.id !== ownerId) {
+      throw new Error("Chỉ được chuyển phiên cho tài khoản hiện đang sử dụng.");
+    }
+    // No hidden takeover during sign-in or on page load.
+    if (!window.confirm(
+      "Chuyển phiên học trực tuyến về thiết bị này? Thiết bị trước không thể gửi AI hoặc đồng bộ cloud; dữ liệu luyện tập local của máy cũ được giữ nguyên."
+    )) return;
+    const lease = await acquireLearningLease(supabase, { takeover: true });
+    setStatus("Đã kích hoạt phiên học trực tuyến trên thiết bị này. Phiên trước không còn quyền ghi cloud. Thời hạn: " +
+      new Date(lease.expiresAt).toLocaleTimeString("vi-VN"));
+  });
+
+  const onCheckLearningLease = () => run(async () => {
+    if (!supabase || !ownerId || identity?.id !== ownerId) {
+      throw new Error("Cần xác minh tài khoản đang sử dụng.");
+    }
+    try {
+      const lease = await acquireLearningLease(supabase);
+      setStatus("Phiên học trực tuyến đang hoạt động. Hết hạn nếu không gia hạn: " +
+        new Date(lease.expiresAt).toLocaleTimeString("vi-VN"));
+    } catch (error) {
+      if (error instanceof LearningLeaseError && error.reason === "ACTIVE_ELSEWHERE") {
+        setStatus("Tài khoản đang học trực tuyến trên thiết bị khác. Bạn vẫn có thể luyện tập dữ liệu local tại đây hoặc chủ động chuyển phiên.");
+        return;
+      }
+      throw error;
+    }
+  });
 
   const onAnonymous = () => run(async () => {
     const session = await ensureGuestSession();
@@ -286,6 +319,19 @@ export default function AccountWorkspaceSettings() {
               className="w-full rounded-xl bg-vibrant-indigo text-white p-3 text-sm font-bold disabled:opacity-50">
               Dùng workspace của tài khoản đã xác minh
             </button>
+          )}
+          {owner?.kind === "account" && identity?.id === owner.userId && (
+            <div className="space-y-2 rounded-xl border border-slate-100 p-3">
+              <p className="text-xs text-slate-600">Chỉ một phiên học trực tuyến có quyền gọi AI và ghi cloud. Luyện tập chunks đã lưu vẫn dùng được khi offline.</p>
+              <button type="button" disabled={busy} onClick={onCheckLearningLease}
+                className="w-full rounded-xl border p-3 text-sm font-semibold disabled:opacity-50">
+                Kiểm tra quyền phiên học trực tuyến
+              </button>
+              <button type="button" disabled={busy} onClick={onTakeoverLearning}
+                className="w-full rounded-xl border border-vibrant-indigo p-3 text-sm font-bold disabled:opacity-50">
+                Chuyển phiên học sang thiết bị này
+              </button>
+            </div>
           )}
           {owner?.kind === "account" && (
             <button type="button" disabled={busy} onClick={onLocal}
