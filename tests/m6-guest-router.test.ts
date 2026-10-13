@@ -70,3 +70,24 @@ test("Linking an existing Guest preserves local UUID, but account selection reje
   assert.equal(await initializeWorkspaceRouting(anonymous(B), storage), null);
   assert.equal(requiresExplicitLocalChoice(storage), true);
 });
+
+test("Offline reload preserves only the selected cached workspace, never beta", async () => {
+  resetWorkspaceRuntime();
+  const storage = store();
+  await chooseGuestWorkspace(A, anonymous(), storage);
+  resetWorkspaceRuntime();
+  const offlineOwner = await initializeWorkspaceRouting(
+    async () => { throw new Error("network offline"); },
+    storage, { offlineLocalAccess: true },
+  );
+  assert.deepEqual(offlineOwner, { kind: "account", userId: A });
+  assert.equal(requiresExplicitLocalChoice(storage), false);
+  resetWorkspaceRuntime();
+  const onlineMismatch = await initializeWorkspaceRouting(anonymous(B), storage);
+  assert.equal(onlineMismatch, null);
+  assert.equal(requiresExplicitLocalChoice(storage), true);
+  chooseLocalWorkspace(storage);
+  const none = await initializeWorkspaceRouting(async () => null, storage, { offlineLocalAccess: true });
+  assert.equal(none, null);
+  assert.equal(activeWorkspaceOwner(), null);
+});
