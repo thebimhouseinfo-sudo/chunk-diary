@@ -20,7 +20,7 @@ const allowedLanguages = new Set(["vi", "en", "zh", "ja", "ko", "es", "fr", "de"
 
 type ErrorCode = "INVALID_REQUEST" | "AUTH_REQUIRED" | "RATE_LIMITED" |
   "PAYLOAD_TOO_LARGE" | "CONFIGURATION_ERROR" | "INVALID_MODEL_OUTPUT" |
-  "PROVIDER_UNAVAILABLE" | "PROVIDER_TIMEOUT";
+  "PROVIDER_UNAVAILABLE" | "PROVIDER_TIMEOUT" | "SESSION_CONFLICT";
 
 function respond(code: number, result: unknown): Response {
   return Response.json(result, { status: code, headers: cors });
@@ -204,6 +204,32 @@ async function verifiedUser(request: Request): Promise<string | null> {
 }
 
 /**
+ * M6-C: compare signed Auth JWT session_id to the DB's one active lease.
+ * Calls the public session-guarded RPC as the USER, never with the service key.
+ * Failure is fail-closed; no client-provided device IDs are accepted.
+ */
+async function checkLearningLease(req: Request): Promise<"active" | "inactive" | "unavailable"> {
+  const auth = req.headers.get("Authorization");
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  if (!auth?.startsWith("Bearer ") || !url || !key) return "unavailable";
+  try {
+    const response = await fetch(url.replace(/\\/$/, "") + "/rest/v1/rpc/chunkdiary_lease_check", {
+      method: "POST",
+      headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return "unavailable";
+    const body: unknown = await response.json();
+    if (!record(body) || typeof body.allowed !== "boolean") return "unavailable";
+    return body.allowed ? "active" : "inactive";
+  } catch {
+    return "unavailable";
+  }
+}
+
+/**
  * M4 safety barrier. Every paid request MUST claim a durable, atomic,
  * authenticated quota slot. The Postgres RPC will only exist when an
  * authorized ChunkDiary staging migration is applied. Missing => fail closed.
@@ -266,6 +292,10 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (!apiKey || !privatePrompt || !promptVersion) {
     return failure(503, "CONFIGURATION_ERROR", requestId);
   }
+  // Never make a paid provider call from a stale/secondary Auth session.
+  const beforeLease = await checkLearningLease(req);
+  if (beforeLease === "inactive") return failure(409, "SESSION_CONFLICT", requestId);
+  if (beforeLease !== "active") return failure(503, "PROVIDER_UNAVAILABLE", requestId);
   const quota = await claimQuota(userId, requestId);
   if (quota === "limited") return failure(429, "RATE_LIMITED", requestId);
   if (quota !== "allowed") return failure(503, "CONFIGURATION_ERROR", requestId);
@@ -311,6 +341,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     console.warn("chunkdiary_ai_output_failure", "contract_validation");
     return failure(502, "INVALID_MODEL_OUTPUT", requestId);
   }
+  // A takeover during provider execution invalidates this response. The
+  // provider may already have billed the call; do not claim a refund.
+  const afterLease = await checkLearningLease(req);
+  if (afterLease === "inactive") return failure(409, "SESSION_CONFLICT", requestId);
+  if (afterLease !== "active") return failure(503, "PROVIDER_UNAVAILABLE", requestId);
   return respond(200, {
     success: true, requestId, contractVersion: "2", promptVersion, result,
   });
