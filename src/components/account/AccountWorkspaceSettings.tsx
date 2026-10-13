@@ -275,7 +275,7 @@ export default function AccountWorkspaceSettings() {
               </div>
             </>
           )}
-          {identity?.isAnonymous && owner?.userId !== identity.id && (
+          {identity?.isAnonymous && (owner?.kind !== "account" || owner.userId !== identity.id) && (
             <button type="button" disabled={busy} onClick={onGuestWorkspace}
               className="w-full rounded-xl bg-vibrant-indigo text-white p-3 text-sm font-bold disabled:opacity-50">
               Dùng workspace Guest riêng (chưa đồng bộ cloud)
