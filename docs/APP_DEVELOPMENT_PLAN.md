@@ -198,7 +198,7 @@ Tasks:
 - DATA-07: account A, account B and unclaimed beta guest on **same browser** retain isolated library, StoryChat session, settings and pending queues, including identical legacy IDs; switch, logout, restore and delayed request never leak/overwrite.
 - DATA-08: claiming previously unowned beta data requires an explicit preview/confirmation; cancelling leaves original local data intact; repeat import is idempotent.
 - PRIV-01: **new private prompt versions** absent from current public source including `server.ts`, Edge Function and legacy docs, frontend bundle, network responses and logs. Historical published prompts remain disclosed; do not assert retroactive secrecy.
-- PRIV-02: raw diaries not uploaded for persistent backup/corpus without **independent** explicit opt-ins, with corpus OFF by default.
+- PRIV-02 (v1.5): Before first cloud backup, present and record clear BACKUP_SYNC disclosure/consent; after approval, new Guest-owned content auto-syncs. Pre-existing unclaimed local beta data needs separate ownership/transfer confirmation. CORPUS_SHARE stays independently opt-in and OFF by default; AI_PROCESSING remains a separate disclosure/action.
 - PRIV-03: client explains transient third-party AI processing of diary content before first generation; explicit Generate action authorizes only processing, not storage/corpus. Verify provider retention/log policy and network traces, no raw diary in error/telemetry.
 - SEC-01: staging RLS cross-user SELECT/INSERT/UPDATE/DELETE denied; authorized owner upsert succeeds.
 - SEC-02: identical local IDs can coexist across two cloud accounts via `(user_id,id)` or equivalent keys, with correct upsert conflict target, row ownership, and no cross-user mutation.
@@ -207,9 +207,10 @@ Tasks:
 - AI-03: malformed/untrusted provider output rejected atomically; no prompt returned in errors.
 - VOICE-01: only voice choice shown, supports preview, accent through voice identity; no speed/quality/pitch UI.
 - VOICE-02: desktop/mobile **browser** voice selection, preview, failed/unavailable voice fallback and hard cloud quota cap tested. Offline TTS and native microphone/voice behavior explicitly deferred to Native phase.
-- ACC-01: guest→linked identity and second-device restore without data loss; switch user does not expose previous account.
-- REL-01: **direct cutover rehearsal** old beta → new app at same origin (no beta transition release), full E2E on Vercel preview + staging backend, Reviewer validation of test scripts, safe rollback/bridge instructions and explicit Human cutover approval.
-- REL-02: before replacement, confirm old and new apps share the **same origin** for transparent IndexedDB reuse; if prior users exist at a different origin, prepare their separate voluntary export/import/bridge path. Preserve backup/recovery options without modifying current production during development.
+- ACC-01 (v1.5): Anonymous Guest auto-creation/resume, consented owned sync, Google/Apple upgrade retaining User ID, safe second-device continuation via verified mechanism; switching identities never exposes previous data.
+- ACC-02 (v1.5): Device handoff requires authenticated source or previously stored recovery proof, server-mediated authority, replay/expiry controls, no session token exposure, and destination guest data protection.
+- REL-01 (v1.5): Complete Vercel Preview + Supabase full-app E2E, Guest/Registered cloud continuation and device transfer acceptance, Reviewer validation, safe rollback and explicit Human production approval; same-origin legacy fixture test remains only a development compatibility regression.
+- REL-02 (v1.5): GitHub Pages (Blogger iframe) and Vercel are different origins; no transparent IndexedDB reuse. Record an explicit, Human-approved real-user continuity procedure at CP8. Real beta JSON export/new-app import is Human-verified fallback; do not imply it automatically migrates all existing users.
 
 ## 6. Critical path, workflow and checkpoints
 Critical path: M0 → M1 → M2 → M3 → M4 → M8. M5 runs after M2 and may progress alongside M3/M4; M6 starts after M1 and M3; M7 follows M1/M5/M6. Every milestone has one checkpoint CP0–CP8 with real source/evidence hashes. Run focused tests per task; broader reviewer checkpoints at contract changes, DB changes, prompt boundary, security and release—not every trivial commit.
@@ -222,14 +223,14 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - Structured operations logging only: request ID, contract/prompt version, error category, metrics and timing; never diary text, private prompt, credential, full provider error or raw audio without consent.
 - Keep production `main` untouched through development. **Only after** full E2E, security/privacy/data release gates and explicit Human approval, perform one controlled final merge/replacement of `main` and production deployment. No intermediate beta feature patch, seven-day staging countdown or forced user migration. No production RLS deployment or DNS change without separate authorization and verified rollback/restore evidence.
 
-## 8. Pending decisions to resolve within M0 (not implementation blockers)
+## 8. Original M0 pending decisions (historical; superseded where resolved)
 - Which launch languages are fully supported vs marked experimental, and human language reviewers/fixtures.
 - Supabase staging project identity and authorization; cloud provider pricing/license confirmations.
 - Cloud diary backup consent scope/retention policy and TTS audio-cache licensing.
 - Where to host private versioned prompts (Edge secret store for simple deployment vs separately restricted private repository/store for version history).
 - Real-user beta fixture availability with opt-in and sanitization; never copy identifiable diaries into public tests.
 
-**CR disposition v1.2 (2026-10-10):** CR-01 local-account isolation → M0.4/M1.2a/M6.3/M6.5/M7.1, DATA-07/08. CR-02 global SQL ID conflict → M6.4, SEC-02. CR-03 `server.ts` prompt exposure → M3.1/M3.5 and file map, PRIV-01. CR-04 AI processing vs persistent backup consent → M0.5/M3.2a/M6.2/M7.1, PRIV-02/03. CR-05 offline voice → **DEFERRED**, independent Native phase as explicitly instructed by Human (no Web release gate). These are planned remediations, **not implemented fixes**; each requires execution evidence and Tester/Reviewer checks at CP1, CP3, CP6 and CP8.
+**Historical CR disposition v1.2 (2026-10-10; task references remapped by §9):** CR-01 local-account isolation → M0.4/M1.2a/M6.3/M6.5/M7.1, DATA-07/08. CR-02 global SQL ID conflict → M6.4, SEC-02. CR-03 `server.ts` prompt exposure → M3.1/M3.5 and file map, PRIV-01. CR-04 AI processing vs persistent backup consent → M0.5/M3.2a/M6.2/M7.1, PRIV-02/03. CR-05 offline voice → **DEFERRED**, independent Native phase as explicitly instructed by Human (no Web release gate). These are planned remediations, **not implemented fixes**; each requires execution evidence and Tester/Reviewer checks at CP1, CP3, CP6 and CP8.
 
 **Traceability / ownership:** CR-01 owner M1 (local repository) + M6 (Auth/Sync); CR-02 owner M6 (SQL/RLS); CR-03 owner M3 (AI privacy); CR-04 owner M3 (privacy contract) + M6 (sync) + M7 (UX notice). M0 freezes evidence/consent/identity contracts first. No other repository write scope. Phase Web = UX_FIRST, reuse current shell for temporary UI; frontend tasks require ui-coder-frontend. Changes to consent texts, legacy data assignment or production cutover are Human Gates.
 
@@ -246,7 +247,7 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - **Blocking user-owned external setup:** identify/create the dedicated **ChunkDiary** Supabase project; separately store `GEMINI_API_KEY`, `CHUNKDIARY_PROMPT_V2`, `CHUNKDIARY_PROMPT_VERSION` in that project's Edge secrets (never Git/chat); configure nonproduction publishable URL/key. Do not set `CHUNKDIARY_AI_ENABLED=true` until M4 quota/RLS staging migration, security tests and provider cost caps pass. A connected generic Supabase project is not assumed to belong to ChunkDiary.
 - **Next coding milestones after project setup:** M4 authenticated/quota-controlled staging AI, M6 scoped Auth/cloud backup+RLS, M7 account/consent UX, M8 full E2E/security/release. No partial CI success authorizes early merge. `main` and production remain unchanged until the final Human-approved release.
 
-## Development checkpoint — 2026-10-11 (M6 security and database recovery)
+## Development checkpoint — 2026-10-11 (historical M6 security and database recovery)
 
 - **Dev source of truth** remains `codex/supabase-app`; `main` and the production Vercel beta remain unchanged. No beta data cutover.
 - **Dedicated Supabase project** `nwowifnlfgcmmoiglgmu` is verified; 7/7 database migration versions and names are now tracked in `supabase/migrations/`. The first six are restored from their actual Supabase migration-ledger SQL, not approximated. The 7th reproduces the user-applied security refactor; it was applied idempotently via the staging migration tool and recorded as version `20261010191845`.
@@ -254,9 +255,9 @@ GSA Planner manages scoped jobs within this plan; Tester provides execution evid
 - **M6 Auth/storage:** local beta remains separate from account-owned IndexedDB; linked owner must be freshly verified on app boot. Failed account verification shows a suspended-account choice, never automatically reveals unclaimed beta. Two-account identical-ID, StoryChat, settings, restore and beta-preservation tests passed.
 - **M6 consented cloud:** manual whole-workspace snapshot and empty-only restore; CAS checksum enforced by SQL, with a persistent owner-bound retry queue (pending/failed/synced), anti-duplicate lease, explicit retry/backoff, switch protection and checksum readback after an uncertain response. No automatic upload on login, edit or AI generation; corpus share defaults OFF.
 - **Database security:** Supabase Advisor **0 WARN/ERROR** after moving the privileged snapshot operation into `chunkdiary_private` and changing the public RPC to `SECURITY INVOKER`. The two remaining private quota-table INFO notices are intentional. RLS denies cross-account data reads/updates and anonymous cloud backups. SQL rollback CAS tests PASS and leave zero synthetic users/rows.
-- **Still not accepted:** real linked Google/email identity and callback UX testing; second real browser/device reconciliation with divergent data; M6 offline browser E2E; independent Reviewer signoff; M7 polished account/privacy UX; M8 full-app regression and user-approved direct cutover. Native app audio remains a later phase.
+- **Historical checkpoint as of 2026-10-11 (superseded by §9):** real linked Google/email identity and callback UX testing; second real browser/device reconciliation with divergent data; M6 offline browser E2E; independent Reviewer signoff; M7 polished account/privacy UX; M8 full-app regression and user-approved direct cutover. Native app audio remains a later phase.
 
-## 6. Supersession ledger — 2026-10-13 (controlling for identity and release tasks)
+## 9. Supersession ledger — 2026-10-13 (controlling for identity and release tasks)
 
 | Former requirement/task | Superseding task or disposition |
 |---|---|
