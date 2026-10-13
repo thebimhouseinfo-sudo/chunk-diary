@@ -44,13 +44,11 @@ function isPristineWelcome(rows: Record<string, Record<string, unknown>[]>): boo
   const [d] = diaries, [u] = units, [c] = chunks;
   return d.title === WELCOME && d.content === "Chào mừng bạn đã tham gia hành trình học ngôn ngữ tự nhiên thông qua các chunks." &&
     typeof d.id === "string" && u.diaryId === d.id && typeof u.id === "string" &&
-    u.nativeText === WELCOME && u.englishPivot === "Welcome to ChunkDiary!" && u.order === 0 &&
+    u.nativeText === WELCOME && u.englishPivot === "Welcome to ChunkDiary!" &&
     c.meaningUnitId === u.id && c.semanticGroupId === "welcome-group-1" &&
-    c.language === "English" && c.text === "Welcome to" && c.meaning === "Chào mừng bạn đến với" &&
-    c.stars === 0 && c.totalReviews === 0 && c.timesPracticed === 0 &&
-    c.bestAccuracy === 0 && c.averageRating === 0 && c.lastRating === 0 &&
-    c.lastPracticed === "" && c.lastReviewed === "" &&
-    c.sourceDiaryId === d.id && c.sourceDiaryTitle === WELCOME;
+    c.text === "Welcome to" && c.meaning === "Chào mừng bạn đến với" &&
+    c.totalReviews === 0 && c.timesPracticed === 0 && c.stars === 0 &&
+    c.bestAccuracy === 0 && c.sourceDiaryId === d.id;
 }
 function readStores(db: IDBDatabase, names: readonly string[]): Promise<Record<string, Record<string, unknown>[]>> {
   return new Promise((resolve, reject) => {
