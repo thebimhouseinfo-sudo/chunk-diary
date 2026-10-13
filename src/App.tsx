@@ -8,8 +8,9 @@ import { Library, Home, Settings, PenLine, Volume2, Gamepad2, Layers } from "luc
 import { preseedDatabaseIfEmpty } from "./db/indexedDb";
 import { loadVoices } from "./utils/tts";
 import { Chunk } from "./types";
-import { supabase } from "./services/supabase/client";
-import { ACTIVE_WORKSPACE_KEY, ACTIVE_GUEST_WORKSPACE_KEY, activeWorkspaceOwner, chooseLocalWorkspace, initializeWorkspaceRouting, requiresExplicitLocalChoice, resetWorkspaceRuntime } from "./db/workspaceRouter";
+import { ensureGuestSession, supabase } from "./services/supabase/client";
+import { hasExistingLegacyWorkspace } from "./db/legacyPresence";
+import { ACTIVE_WORKSPACE_KEY, ACTIVE_GUEST_WORKSPACE_KEY, activeWorkspaceOwner, chooseGuestWorkspace, chooseLocalWorkspace, initializeWorkspaceRouting, requiresExplicitLocalChoice, resetWorkspaceRuntime, selectedWorkspaceUser } from "./db/workspaceRouter";
 
 // Views
 import HomeView from "./components/HomeView";
@@ -38,6 +39,26 @@ export default function App() {
           if (error || !data.user) return null;
           return { id: data.user.id, isAnonymous: Boolean(data.user.is_anonymous) };
         }, localStorage);
+        // Only a genuinely fresh browser origin may auto-enter the new Guest
+        // workspace. Existing beta IndexedDB must remain visible, untouched,
+        // unclaimed and never uploaded by a newly created Anonymous account.
+        if (!selectedWorkspaceUser(localStorage) && supabase &&
+            !(await hasExistingLegacyWorkspace())) {
+          try {
+            const session = await ensureGuestSession();
+            if (session?.user.is_anonymous) {
+              const fresh = async () => {
+                const { data, error } = await supabase.auth.getUser();
+                if (error || !data.user) return null;
+                return { id: data.user.id, isAnonymous: Boolean(data.user.is_anonymous) };
+              };
+              await chooseGuestWorkspace(session.user.id, fresh, localStorage);
+            }
+          } catch {
+            // First-run offline/blocked Auth stays local. Never abandon local
+            // practice or create a cloud owner from an unverified session.
+          }
+        }
         if (requiresExplicitLocalChoice(localStorage)) {
           // Do not silently reveal unscoped beta content after a linked account
           // expires, the network is offline, or the tab switches to another ID.
