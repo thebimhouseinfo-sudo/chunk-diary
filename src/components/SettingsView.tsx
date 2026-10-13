@@ -21,6 +21,7 @@ import { clearAllIndexedDb } from "../db/indexedDb"; // Import to clear IndexedD
 import { clearAllUserDb } from "../db/userDb";
 import { activeWorkspaceOwner, workspaceLocalKey } from "../db/workspaceRouter";
 import { importIntoScopedWorkspace, previewScopedImport } from "../db/scopedWorkspace";
+import { previewLocalImport, importPreviewLocalBackup } from "../db/previewLocalImport";
 import { createManualWorkspaceBackup, restoreAccountPreferences } from "../services/supabase/manualBackup";
 import AccountWorkspaceSettings from "./account/AccountWorkspaceSettings";
 
@@ -175,6 +176,22 @@ export default function SettingsView() {
     } finally {
       setBackupBusy(false);
     }
+  };
+
+  const handleImportFileIntoLocal = async () => {
+    if (!restorePreview || activeWorkspaceOwner()?.kind === "account") return;
+    setBackupBusy(true);
+    setBackupError(false);
+    try {
+      const preview = await previewLocalImport(restorePreview);
+      if (!preview.canImport) throw new Error("Local workspace đã có dữ liệu hoặc cài đặt; không thể nhập đè. Dùng browser profile mới để test.");
+      if (!window.confirm("Nhập " + preview.importRecords + " bản ghi vào Local workspace TRỐNG trên bản preview? Không upload cloud, không sửa dữ liệu app cũ. Xác nhận?")) return;
+      await importPreviewLocalBackup(restorePreview, { confirmed: true });
+      window.location.reload();
+    } catch (error) {
+      setBackupError(true);
+      setBackupMessage(error instanceof Error ? error.message : "Không thể nhập dữ liệu local.");
+    } finally { setBackupBusy(false); }
   };
 
   const handleImportFileIntoAccount = async () => {
@@ -491,6 +508,12 @@ export default function SettingsView() {
               >
                 <Upload size={18} /> Kiểm tra tệp khôi phục
               </button>
+              {restorePreview && activeWorkspaceOwner()?.kind !== "account" && (
+                <button type="button" disabled={backupBusy} onClick={handleImportFileIntoLocal}
+                  className="w-full rounded-xl bg-vibrant-indigo text-white px-4 py-3 text-sm font-bold disabled:opacity-50">
+                  Nhập file vào dữ liệu Local trống để kiểm thử
+                </button>
+              )}
               {restorePreview && activeWorkspaceOwner()?.kind === "account" && (
                 <button type="button" disabled={backupBusy} onClick={handleImportFileIntoAccount}
                   className="w-full rounded-xl bg-slate-100 p-3 text-sm font-bold disabled:opacity-50">
