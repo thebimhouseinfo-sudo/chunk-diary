@@ -75,21 +75,6 @@ test("M7: pristine app welcome seed may be replaced; edited seed is protected", 
   };
   await preseedDatabaseIfEmpty();
   assert.equal((await getDiaries()).length, 1);
-  const debugDb = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open("LanguageChunkDiaryDB", 4);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  const debugStores: Record<string, unknown[]> = {};
-  for (const name of ["diaries","meaningUnits","chunks","semanticGroups","englishChunks","userProgress"]) {
-    debugStores[name] = await new Promise<unknown[]>((resolve,reject) => {
-      const req = debugDb.transaction(name).objectStore(name).getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  debugDb.close();
-  console.log("WELCOME_FIXTURE_DIAGNOSTIC", JSON.stringify(debugStores));
   assert.equal((await previewLocalImport(backup)).canImport, true);
   await importPreviewLocalBackup(backup, { confirmed: true });
   assert.equal((await getDiaries()).length, report.counts.diaries);
