@@ -6,7 +6,7 @@ import { fingerprintLegacySnapshot, inspectLegacySnapshot, type LegacySnapshot }
 import { type LegacyBackup } from "../src/db/legacySnapshot.ts";
 import { previewLocalImport, importPreviewLocalBackup } from "../src/db/previewLocalImport.ts";
 import { resetWorkspaceRuntime } from "../src/db/workspaceRouter.ts";
-import { getDiaries, getChunks } from "../src/db/indexedDb.ts";
+import { getDiaries, getChunks, preseedDatabaseIfEmpty } from "../src/db/indexedDb.ts";
 
 test("M7 preview: real legacy fixture imports to EMPTY Local and refuses repeat overwrite", async () => {
   (globalThis as { indexedDB: IDBFactory }).indexedDB = new FakeIDBFactory() as unknown as IDBFactory;
@@ -55,4 +55,29 @@ test("M7 preview: real legacy fixture imports to EMPTY Local and refuses repeat 
   assert.equal(after.canImport,false);
   await assert.rejects(importPreviewLocalBackup(backup,{confirmed:true}),/refusing to overwrite/);
   assert.equal((await getChunks()).length,report.counts.chunks);
+});
+
+test("M7: pristine app welcome seed may be replaced; edited seed is protected", async () => {
+  (globalThis as { indexedDB: IDBFactory }).indexedDB = new FakeIDBFactory() as unknown as IDBFactory;
+  const values = new Map<string,string>();
+  (globalThis as unknown as {localStorage: Storage}).localStorage = {
+    getItem: (k: string) => values.get(k) ?? null,
+    setItem: (k: string, v: string) => { values.set(k,v); },
+    removeItem: (k: string) => { values.delete(k); },
+  } as Storage;
+  resetWorkspaceRuntime();
+  const snapshot = JSON.parse(await readFile(new URL("./fixtures/beta-v4.fixture.json", import.meta.url), "utf8")) as LegacySnapshot;
+  const report = inspectLegacySnapshot(snapshot);
+  const backup: LegacyBackup = {
+    format: "chunkdiary.beta-v4.snapshot", formatVersion: 1, capturedAt: "2026-10-10T00:00:00Z",
+    snapshot, checksum: await fingerprintLegacySnapshot(snapshot), counts: report.counts,
+    storySessionCount: report.storySessionCount,
+  };
+  await preseedDatabaseIfEmpty();
+  assert.equal((await getDiaries()).length, 1);
+  assert.equal((await previewLocalImport(backup)).canImport, true);
+  await importPreviewLocalBackup(backup, { confirmed: true });
+  assert.equal((await getDiaries()).length, report.counts.diaries);
+  assert.equal((await getChunks()).length, report.counts.chunks);
+  assert.equal((await previewLocalImport(backup)).canImport, false);
 });
