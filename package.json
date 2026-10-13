@@ -13,7 +13,8 @@
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-server']) fs.rmSync(p,{recursive:true,force:true});\"",
     "lint": "tsc --noEmit",
     "test:legacy": "node --import tsx --test tests/legacy-compat.test.ts tests/legacy-snapshot.test.ts",
-    "test:snapshot": "node --import tsx --test tests/legacy-snapshot.test.ts"
+    "test:snapshot": "node --import tsx --test tests/legacy-snapshot.test.ts",
+    "test:m6-guest": "node --import tsx --test tests/m6-guest-router.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
