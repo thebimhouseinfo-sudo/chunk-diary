@@ -36,7 +36,7 @@ function countStores(db: IDBDatabase, stores: readonly string[]): Promise<number
   });
 }
 
-function writeStores(db: IDBDatabase, rows: Record<string, Record<string, unknown>[]>, stores: readonly string[]): Promise<void> {
+function writeStores(db: IDBDatabase, rows: Record<string, Record<string, unknown>[]>, stores: readonly string[], replaceSettings = false): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([...stores], "readwrite");
     // Repeat the empty check IN the writing transaction to avoid TOCTOU overwrite.
@@ -44,13 +44,14 @@ function writeStores(db: IDBDatabase, rows: Record<string, Record<string, unknow
     for (const store of stores) {
       const req = tx.objectStore(store).count();
       req.onsuccess = () => {
-        if (req.result !== 0) {
+        if (req.result !== 0 && !(replaceSettings && store === "settings")) {
           tx.abort();
           return;
         }
         pending--;
         if (pending === 0) {
           for (const name of stores) {
+            if (replaceSettings && name === "settings") tx.objectStore(name).clear();
             for (const row of rows[name] ?? []) tx.objectStore(name).add(row);
           }
         }
@@ -71,11 +72,12 @@ export async function previewLocalImport(input: unknown): Promise<LocalImportPre
     if (db.name !== LEGACY_DB_NAME || db.version !== LEGACY_DB_VERSION || story.version !== LEGACY_STORY_DB_VERSION) {
       throw new Error("Incompatible local database version");
     }
-    const currentRecords = await countStores(db, LEGACY_STORES) + await countStores(story, ["sessions"]);
-    // Local preferences also belong to the current user; never overwrite them.
-    const preferencesPresent = Object.keys(backup.snapshot.localSettings).some(key => localStorage.getItem(key) !== null);
+    // App onboarding may pre-create preferences/settings. Learning content is the
+    // only hard blocker; replacing preferences requires explicit import consent.
+    const learningStores = LEGACY_STORES.filter(name => name !== "settings");
+    const currentRecords = await countStores(db, learningStores) + await countStores(story, ["sessions"]);
     return {
-      canImport: currentRecords === 0 && !preferencesPresent,
+      canImport: currentRecords === 0,
       currentRecords,
       importRecords: LEGACY_STORES.reduce((sum, name) => sum + backup.counts[name], backup.storySessionCount),
     };
@@ -86,14 +88,20 @@ export async function importPreviewLocalBackup(input: unknown, options: { confir
   if (options?.confirmed !== true) throw new Error("Explicit import confirmation required");
   const backup: LegacyBackup = await validateLegacyBackup(input);
   const preflight = await previewLocalImport(backup);
-  if (!preflight.canImport) throw new Error("Local workspace already contains data/settings; refusing to overwrite");
+  if (!preflight.canImport) throw new Error("Local workspace already contains learning data; refusing to overwrite");
   const db = await openDB();
   const story = await openStoryDb(indexedDB);
   try {
     // The two IndexedDB databases cannot share one atomic transaction. Write the
     // legacy main database first. On StoryChat error, remove only imported rows.
     const rows = backup.snapshot.stores as Record<string, Record<string, unknown>[]>;
-    await writeStores(db, rows, LEGACY_STORES);
+    const priorSettings = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const tx = db.transaction(["settings"], "readonly");
+      const req = tx.objectStore("settings").getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await writeStores(db, rows, LEGACY_STORES, true);
     try {
       await writeStores(story, { sessions: backup.snapshot.storySessions }, ["sessions"]);
     } catch (error) {
@@ -103,6 +111,8 @@ export async function importPreviewLocalBackup(input: unknown, options: { confir
           const key = name === "settings" ? "key" : "id";
           for (const row of rows[name]) tx.objectStore(name).delete(row[key] as IDBValidKey);
         }
+        tx.objectStore("settings").clear();
+        for (const oldSetting of priorSettings) tx.objectStore("settings").add(oldSetting);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
