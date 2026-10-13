@@ -127,13 +127,8 @@ export async function importPreviewLocalBackup(input: unknown, options: { confir
     // The two IndexedDB databases cannot share one atomic transaction. Write the
     // legacy main database first. On StoryChat error, remove only imported rows.
     const rows = backup.snapshot.stores as Record<string, Record<string, unknown>[]>;
-    const priorSettings = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
-      const tx = db.transaction(["settings"], "readonly");
-      const req = tx.objectStore("settings").getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    await writeStores(db, rows, LEGACY_STORES, true);
+    const previous = await readStores(db, LEGACY_STORES);
+    await writeStores(db, rows, LEGACY_STORES, true, true);
     try {
       await writeStores(story, { sessions: backup.snapshot.storySessions }, ["sessions"]);
     } catch (error) {
@@ -143,8 +138,6 @@ export async function importPreviewLocalBackup(input: unknown, options: { confir
           tx.objectStore(name).clear();
           for (const row of previous[name] ?? []) tx.objectStore(name).add(row);
         }
-        tx.objectStore("settings").clear();
-        for (const oldSetting of priorSettings) tx.objectStore("settings").add(oldSetting);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
