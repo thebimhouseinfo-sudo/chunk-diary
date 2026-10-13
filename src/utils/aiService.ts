@@ -3,7 +3,8 @@
  */
 
 import { SemanticGroup } from "../types";
-import { ensureGuestSession } from "../services/supabase/client";
+import { ensureGuestSession, supabase } from "../services/supabase/client";
+import { acquireLearningLease, LearningLeaseError } from "../services/supabase/learningLease";
 import { getSettings } from "../db/userDb";
 import { validateGeneratedResponse, type GeneratedResponse } from "../domain/generation";
 import { getLanguageProfile } from "../domain/language";
@@ -14,6 +15,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 export type AIErrorCode =
   | "INVALID_REQUEST"
   | "AUTH_REQUIRED"
+  | "SESSION_CONFLICT"
   | "PROFILE_REQUIRED"
   | "RATE_LIMITED"
   | "PAYLOAD_TOO_LARGE"
@@ -100,6 +102,21 @@ export async function callGenerateChunks(
       throw new AIServiceError("User session is required to generate chunks.", "AUTH_REQUIRED");
     }
 
+    // Acquire only if no competing online learner owns this Auth account.
+    // Browser local practice remains fully independent from this online gate.
+    if (supabase && session) {
+      try {
+        await acquireLearningLease(supabase);
+      } catch (error) {
+        if (error instanceof LearningLeaseError) {
+          throw new AIServiceError(error.message,
+            error.reason === "ACTIVE_ELSEWHERE" ? "SESSION_CONFLICT" : "AUTH_REQUIRED",
+            error.reason === "UNAVAILABLE", requestId);
+        }
+        throw error;
+      }
+    }
+
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
     const abortRequest = () => controller.abort();
@@ -128,7 +145,9 @@ export async function callGenerateChunks(
 
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        const code: AIErrorCode = response.status === 401 || response.status === 403
+        const code: AIErrorCode = response.status === 409
+          ? "SESSION_CONFLICT"
+          : response.status === 401 || response.status === 403
           ? "AUTH_REQUIRED"
           : response.status === 413
             ? "PAYLOAD_TOO_LARGE"
